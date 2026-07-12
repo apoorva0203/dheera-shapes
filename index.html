@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Shapes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#FBF7EF" />
+  <title>Shapes</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <button id="mute" aria-label="Mute" title="Mute">
+    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+      <path id="mute-on"  d="M3 10v4h4l5 4V6L7 10H3zm13.5 2c0-1.6-.9-3-2.2-3.7v7.4c1.3-.7 2.2-2.1 2.2-3.7z" />
+      <path id="mute-off" d="M3 10v4h4l5 4V6L7 10H3zm14 0l4 4m0-4l-4 4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" style="display:none" />
+    </svg>
+  </button>
+
+  <svg id="stage" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+
+  <script src="shapes.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
