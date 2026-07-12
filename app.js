@@ -403,10 +403,11 @@
     if (speechWarmed) return;
     if (!('speechSynthesis' in window)) return;
     try {
-      // Speaking a silent (very short) utterance from a user gesture unlocks
-      // the engine on iOS. It also triggers voice loading in some builds.
-      const warmup = new SpeechSynthesisUtterance(' ');
-      warmup.volume = 0;
+      // Safari (both desktop and iOS) needs a real .speak() invocation from
+      // a user gesture to unlock the engine. Volume 0 is treated as invalid
+      // on some builds — use a barely-audible value instead.
+      const warmup = new SpeechSynthesisUtterance('a');
+      warmup.volume = 0.01;
       warmup.rate = 1;
       warmup.lang = 'en-US';
       window.speechSynthesis.speak(warmup);
@@ -418,15 +419,14 @@
   function speak(text, opts = {}) {
     if (muted) return;
     if (!('speechSynthesis' in window)) return;
+    if (!text) return;
     try {
       window.speechSynthesis.cancel();
-      // On some iOS builds the queue stays paused unless we explicitly
-      // resume — cheap idempotent call.
       window.speechSynthesis.resume();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = opts.rate ?? 0.85;
       u.pitch = opts.pitch ?? 1.1;
-      u.volume = 0.95;
+      u.volume = 1.0;
       u.lang = 'en-US';
       const voice = cachedVoice || pickFriendlyVoice();
       if (voice) u.voice = voice;
@@ -434,9 +434,15 @@
     } catch { /* ignore */ }
   }
 
-  // Warm up on the first pointer contact anywhere on the stage — a real
-  // user gesture is required for iOS to unlock audio/speech in PWAs.
-  stage.addEventListener('pointerdown', warmupSpeech, { once: true });
+  // Warm up on the first user gesture *anywhere* — pointerdown on the stage,
+  // click on mute, touchstart on document. Safari requires the first .speak()
+  // to happen inside a real user gesture handler.
+  const warmupEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
+  const warmupHandler = () => {
+    warmupSpeech();
+    warmupEvents.forEach((ev) => document.removeEventListener(ev, warmupHandler));
+  };
+  warmupEvents.forEach((ev) => document.addEventListener(ev, warmupHandler, { passive: true }));
 
   // ------- mute UI -------
 
