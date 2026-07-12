@@ -13,13 +13,11 @@
   let trayY = 1050;
   let tileSize = 180;
 
-  // Phase progression. Level increments after each solved puzzle and is
-  // persisted so the child picks up where they left off.
-  //   1..25   → shapes phase, count grows 3 → 8
-  //   26..51  → single letters A through Z
-  //   52..101 → random 2-letter combinations
-  //   102+    → real 3-letter words
+  // Level increments after each solved puzzle. Puzzle count grows to 8 then
+  // plateaus — endless variation via the shape library. Persisted so the
+  // child picks up where they left off.
   const START_LEVEL = 1;
+  const MAX_SHAPE_COUNT = 8;
   let level = START_LEVEL;
 
   let currentPuzzle = null;
@@ -48,36 +46,16 @@
     return el;
   }
 
-  // ------- item lookup (shapes + letters share one interface) -------
+  // ------- item lookup -------
 
   function itemSvgById(itemId) {
-    if (itemId.startsWith('letter-')) {
-      const letter = itemId.slice(7);
-      return letterSvg(letter);
-    }
     const shape = SHAPES.find((s) => s.id === itemId);
     return shape ? shape.svg : '';
   }
 
-  function itemKind(itemId) {
-    return itemId.startsWith('letter-') ? 'letter' : 'shape';
-  }
-
-  // ------- phase resolution -------
-
-  function getPhase(lvl) {
-    if (lvl <= 25) {
-      // 3 shapes at levels 1-2, +1 every 2 levels, capped at 8.
-      const shapeCount = Math.min(3 + Math.floor((lvl - 1) / 2), 8);
-      return { name: 'shape', shapeCount };
-    }
-    if (lvl <= 51) {
-      return { name: 'letter', letter: LETTERS[lvl - 26] };
-    }
-    if (lvl <= 101) {
-      return { name: 'twoLetter' };
-    }
-    return { name: 'word' };
+  function shapeCountForLevel(lvl) {
+    // 3 shapes at levels 1-2, +1 every 2 levels, capped at MAX_SHAPE_COUNT.
+    return Math.min(3 + Math.floor((lvl - 1) / 2), MAX_SHAPE_COUNT);
   }
 
   // ------- layout -------
@@ -115,76 +93,12 @@
   // ------- puzzle generation -------
 
   function generatePuzzle() {
-    const phase = getPhase(level);
-    switch (phase.name) {
-      case 'shape':      return generateShapePuzzle(phase.shapeCount);
-      case 'letter':     return generateLetterPuzzle(phase.letter);
-      case 'twoLetter':  return generateTwoLetterPuzzle();
-      case 'word':       return generateWordPuzzle();
-    }
-  }
-
-  function generateShapePuzzle(count) {
+    const count = shapeCountForLevel(level);
     const chosenIds = pickN(SHAPES.map((s) => s.id), count);
     const trayIds = shuffle(chosenIds);
     const trayColors = pickN(COLORS, chosenIds.length);
     return {
-      phase: 'shape',
       slots: chosenIds.map((id, i) => ({ id, index: i, filled: false })),
-      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
-    };
-  }
-
-  function generateLetterPuzzle(letter) {
-    // 1 target slot + 3 tiles (target + 2 decoys) — teaches letter recognition
-    // by picking the right letter out of a few.
-    const targetId = 'letter-' + letter;
-    const decoyLetters = pickN(LETTERS.filter((l) => l !== letter), 2);
-    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
-    const trayIds = shuffle([targetId, ...decoyIds]);
-    const trayColors = pickN(COLORS, trayIds.length);
-    return {
-      phase: 'letter',
-      // Lowercase so the TTS reads the letter name only, not "capital A".
-      speak: letter.toLowerCase(),
-      slots: [{ id: targetId, index: 0, filled: false }],
-      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
-    };
-  }
-
-  function generateTwoLetterPuzzle() {
-    const chosenLetters = pickN(LETTERS, 2);
-    const targetIds = chosenLetters.map((l) => 'letter-' + l);
-    const decoyLetters = pickN(
-      LETTERS.filter((l) => !chosenLetters.includes(l)),
-      2,
-    );
-    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
-    const trayIds = shuffle([...targetIds, ...decoyIds]);
-    const trayColors = pickN(COLORS, trayIds.length);
-    return {
-      phase: 'twoLetter',
-      slots: targetIds.map((id, i) => ({ id, index: i, filled: false })),
-      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
-    };
-  }
-
-  function generateWordPuzzle() {
-    const word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
-    const letters = word.split('');
-    const slotIds = letters.map((l) => 'letter-' + l);
-    // Decoys: 2 letters not already in the word.
-    const decoyLetters = pickN(
-      LETTERS.filter((l) => !letters.includes(l)),
-      2,
-    );
-    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
-    const trayIds = shuffle([...slotIds, ...decoyIds]);
-    const trayColors = pickN(COLORS, trayIds.length);
-    return {
-      phase: 'word',
-      speak: word.toLowerCase(),
-      slots: slotIds.map((id, i) => ({ id, index: i, filled: false })),
       tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
     };
   }
@@ -211,7 +125,7 @@
         'data-slot-index': String(slot.index),
         fill: 'var(--slot-fill)',
         stroke: 'var(--slot-outline)',
-        'stroke-width': itemKind(slot.id) === 'letter' ? '2.5' : '3.5',
+        'stroke-width': '3.5',
         'stroke-dasharray': '6 5',
         'stroke-linejoin': 'round',
       });
@@ -388,20 +302,8 @@
       );
     }
 
-    // Phase-specific completion cue.
-    setTimeout(() => {
-      if (currentPuzzle.phase === 'letter') {
-        speak(currentPuzzle.speak, { rate: 0.85 });
-      } else if (currentPuzzle.phase === 'word') {
-        speak(currentPuzzle.speak, { rate: 0.75 });
-      } else {
-        playChime(1.0, 0.15);
-      }
-    }, 250);
-
-    // Give speech time to finish before advancing.
-    const advanceDelay = currentPuzzle.phase === 'word' ? 2400 : 1600;
-    setTimeout(() => nextPuzzle(), advanceDelay);
+    setTimeout(() => playChime(1.0, 0.15), 250);
+    setTimeout(() => nextPuzzle(), 1600);
   }
 
   function nextPuzzle() {
@@ -458,51 +360,6 @@
     osc.stop(now + 0.55);
   }
 
-  // Warmest voice we can find on the device — iOS/Mac Enhanced voices sound
-  // most human. Rate + pitch are tuned soft and slow so nothing surprises.
-  let cachedVoice = null;
-  function pickFriendlyVoice() {
-    if (!('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices() || [];
-    if (voices.length === 0) return null;
-    const preferredNames = ['Ava', 'Samantha', 'Karen', 'Serena', 'Moira', 'Tessa', 'Fiona', 'Nicky'];
-    // Enhanced/Premium voices first — they sound noticeably more natural.
-    const enhanced = voices.filter((v) =>
-      /Enhanced|Premium/i.test(v.name) && v.lang.startsWith('en'),
-    );
-    for (const name of preferredNames) {
-      const hit = enhanced.find((v) => v.name.includes(name));
-      if (hit) return hit;
-    }
-    for (const name of preferredNames) {
-      const hit = voices.find((v) => v.name.includes(name) && v.lang.startsWith('en'));
-      if (hit) return hit;
-    }
-    return voices.find((v) => v.lang.startsWith('en-')) || voices[0];
-  }
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = () => { cachedVoice = pickFriendlyVoice(); };
-    cachedVoice = pickFriendlyVoice();
-  }
-
-  function speak(text, opts = {}) {
-    if (muted) return;
-    if (!('speechSynthesis' in window)) { playChime(1.0, 0.15); return; }
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = opts.rate ?? 0.75;   // slow + gentle
-      u.pitch = opts.pitch ?? 1.15; // slightly higher = warmer / less robotic
-      u.volume = 0.85;
-      u.lang = 'en-US';
-      const voice = cachedVoice || pickFriendlyVoice();
-      if (voice) u.voice = voice;
-      window.speechSynthesis.speak(u);
-    } catch {
-      playChime(1.0, 0.15);
-    }
-  }
-
   // ------- mute UI -------
 
   function loadMute() {
@@ -526,7 +383,6 @@
 
   muteButton.addEventListener('click', () => {
     muted = !muted;
-    if (muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
     saveMute();
     updateMuteUI();
   });

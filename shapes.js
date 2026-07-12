@@ -27,6 +27,18 @@ const SHAPES = [
   { id: 'kite',          svg: '<polygon points="0,-44 32,-4 0,44 -32,-4" />' },
   { id: 'cloud',         svg: '<path d="M -32,10 C -50,10 -50,-14 -32,-14 C -30,-30 -8,-32 -2,-20 C 4,-32 26,-30 26,-14 C 44,-14 44,10 26,10 Z" />' },
   { id: 'lightning',     svg: '<polygon points="8,-44 -30,4 -6,4 -12,44 26,-8 4,-8 12,-44" />' },
+
+  // Material-style solid icons — kid-friendly, all rendered as flat silhouettes.
+  { id: 'house',         svg: '<path d="M -38 -4 L 0 -40 L 38 -4 L 38 38 L 12 38 L 12 10 L -12 10 L -12 38 L -38 38 Z" />' },
+  { id: 'car',           svg: '<path d="M -40 6 L -32 -12 L -14 -22 L 14 -22 L 32 -12 L 40 6 L 40 22 Q 40 26 36 26 L -36 26 Q -40 26 -40 22 Z M -22 30 A 8 8 0 1 1 -6 30 A 8 8 0 1 1 -22 30 Z M 6 30 A 8 8 0 1 1 22 30 A 8 8 0 1 1 6 30 Z" />' },
+  { id: 'tree',          svg: '<polygon points="0,-42 -24,-12 -14,-12 -30,10 -18,10 -34,32 34,32 18,10 30,10 14,-12 24,-12" /><rect x="-7" y="32" width="14" height="12" />' },
+  { id: 'apple',         svg: '<circle cx="0" cy="6" r="34" /><path d="M -2 -38 L 2 -38 L 4 -26 L -4 -26 Z" /><ellipse cx="10" cy="-30" rx="8" ry="5" transform="rotate(20 10 -30)" />' },
+  { id: 'balloon',       svg: '<ellipse cx="0" cy="-4" rx="28" ry="34" /><polygon points="-4,28 4,28 3,42 -3,42" />' },
+  { id: 'gift',          svg: '<rect x="-38" y="-10" width="76" height="50" rx="4" /><rect x="-7" y="-10" width="14" height="50" /><rect x="-38" y="8" width="76" height="10" /><path d="M -18 -18 Q -18 -30 -6 -30 Q 0 -30 0 -20 Q 0 -30 6 -30 Q 18 -30 18 -18 L 18 -10 L -18 -10 Z" />' },
+  { id: 'rocket',        svg: '<path d="M 0 -42 L -16 -12 L -16 24 Q -16 28 -12 28 L 12 28 Q 16 28 16 24 L 16 -12 Z M -16 24 L -26 40 L -18 34 Z M 16 24 L 26 40 L 18 34 Z" /><circle cx="0" cy="-8" r="7" fill="white" />' },
+  { id: 'fish',          svg: '<path d="M -38 0 Q -34 -22 -6 -20 Q 4 -12 12 -8 L 34 -22 L 34 22 L 12 8 Q 4 12 -6 20 Q -34 22 -38 0 Z" /><circle cx="-16" cy="-6" r="4" fill="white" />' },
+  { id: 'icecream',      svg: '<circle cx="0" cy="-14" r="20" /><circle cx="-14" cy="-24" r="14" /><circle cx="14" cy="-24" r="14" /><polygon points="-22,6 22,6 0,42" />' },
+  { id: 'leaf',          svg: '<path d="M -30 30 Q -40 -20 0 -40 Q 40 -20 30 30 Q 20 34 0 32 Q -20 34 -30 30 Z M 0 -40 L 0 32" fill-rule="nonzero" stroke-linejoin="round" />' },
 ];
 
 const COLORS = [
