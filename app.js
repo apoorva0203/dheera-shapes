@@ -367,32 +367,40 @@
 
   // ------- voice (pre-recorded audio files) -------
   //
-  // We ship one .m4a per shape name so speech works on kid accounts where
-  // speechSynthesis is restricted at the OS level. First .play() must fire
-  // inside a user gesture on iOS; a "warmup" (silent playback in first
-  // pointerdown) unlocks subsequent programmatic plays.
+  // Kid-account safe: uses HTMLAudioElement + m4a files instead of
+  // speechSynthesis (which iOS Screen Time can restrict). iOS Safari
+  // requires the first .play() to happen in a user-gesture callback; we
+  // unlock the engine with a base64 silent WAV (no network fetch, plays
+  // instantly) on the very first pointerdown/touchstart.
 
-  const audioPlayer = new Audio();
-  audioPlayer.preload = 'auto';
+  // Tiny silent WAV, ~68 bytes decoded. Plays reliably on any Safari.
+  const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+  const warmupPlayer = new Audio(SILENT_WAV);
+  const audioCache = new Map(); // slug → Audio instance, keeps files preloaded
   let audioWarmed = false;
 
   function nameToSlug(name) {
     return String(name).toLowerCase().replace(/\s+/g, '-');
   }
 
+  function getAudioFor(slug) {
+    let audio = audioCache.get(slug);
+    if (!audio) {
+      audio = new Audio(`./audio/${slug}.m4a`);
+      audio.preload = 'auto';
+      audioCache.set(slug, audio);
+    }
+    return audio;
+  }
+
   function warmupAudio() {
     if (audioWarmed) return;
     try {
-      audioPlayer.src = './audio/well-done.m4a';
-      audioPlayer.volume = 0.001;
-      const p = audioPlayer.play();
+      warmupPlayer.volume = 1.0;
+      warmupPlayer.currentTime = 0;
+      const p = warmupPlayer.play();
       if (p && typeof p.then === 'function') {
-        p.then(() => {
-          audioPlayer.pause();
-          audioPlayer.currentTime = 0;
-          audioPlayer.volume = 1.0;
-          audioWarmed = true;
-        }).catch(() => { /* ignore */ });
+        p.then(() => { audioWarmed = true; }).catch(() => { /* ignore */ });
       } else {
         audioWarmed = true;
       }
@@ -403,11 +411,10 @@
     if (muted) return;
     if (!text) return;
     try {
-      const slug = nameToSlug(text);
-      audioPlayer.src = `./audio/${slug}.m4a`;
-      audioPlayer.volume = 1.0;
-      audioPlayer.currentTime = 0;
-      const p = audioPlayer.play();
+      const audio = getAudioFor(nameToSlug(text));
+      audio.volume = 1.0;
+      audio.currentTime = 0;
+      const p = audio.play();
       if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
     } catch { /* ignore */ }
   }
