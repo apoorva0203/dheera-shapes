@@ -307,8 +307,8 @@
       );
     }
 
-    setTimeout(() => speak('well done', { rate: 0.8, pitch: 1.1 }), 400);
-    setTimeout(() => nextPuzzle(), 2000);
+    setTimeout(() => speak('well done'), 400);
+    setTimeout(() => nextPuzzle(), 2200);
   }
 
   function nextPuzzle() {
@@ -365,81 +365,56 @@
     osc.stop(now + 0.55);
   }
 
-  // ------- speech -------
+  // ------- voice (pre-recorded audio files) -------
   //
-  // iOS Safari (especially in standalone / PWA mode) is finicky about
-  // speechSynthesis: voices don't populate until after a real user gesture,
-  // and utterances silently fail if the engine hasn't been "warmed up." We
-  // pick the friendliest available voice, warm the engine on the first
-  // pointerdown, and re-query voices whenever the OS finally loads them.
+  // We ship one .m4a per shape name so speech works on kid accounts where
+  // speechSynthesis is restricted at the OS level. First .play() must fire
+  // inside a user gesture on iOS; a "warmup" (silent playback in first
+  // pointerdown) unlocks subsequent programmatic plays.
 
-  let cachedVoice = null;
-  let speechWarmed = false;
+  const audioPlayer = new Audio();
+  audioPlayer.preload = 'auto';
+  let audioWarmed = false;
 
-  function pickFriendlyVoice() {
-    if (!('speechSynthesis' in window)) return null;
-    const voices = window.speechSynthesis.getVoices() || [];
-    if (voices.length === 0) return null;
-    const preferredNames = ['Ava', 'Samantha', 'Karen', 'Serena', 'Moira', 'Tessa', 'Fiona', 'Nicky'];
-    const enhanced = voices.filter((v) =>
-      /Enhanced|Premium/i.test(v.name) && v.lang.startsWith('en'),
-    );
-    for (const name of preferredNames) {
-      const hit = enhanced.find((v) => v.name.includes(name));
-      if (hit) return hit;
-    }
-    for (const name of preferredNames) {
-      const hit = voices.find((v) => v.name.includes(name) && v.lang.startsWith('en'));
-      if (hit) return hit;
-    }
-    return voices.find((v) => v.lang.startsWith('en-')) || voices[0];
-  }
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = () => { cachedVoice = pickFriendlyVoice(); };
-    cachedVoice = pickFriendlyVoice();
+  function nameToSlug(name) {
+    return String(name).toLowerCase().replace(/\s+/g, '-');
   }
 
-  function warmupSpeech() {
-    if (speechWarmed) return;
-    if (!('speechSynthesis' in window)) return;
+  function warmupAudio() {
+    if (audioWarmed) return;
     try {
-      // Safari (both desktop and iOS) needs a real .speak() invocation from
-      // a user gesture to unlock the engine. Volume 0 is treated as invalid
-      // on some builds — use a barely-audible value instead.
-      const warmup = new SpeechSynthesisUtterance('a');
-      warmup.volume = 0.01;
-      warmup.rate = 1;
-      warmup.lang = 'en-US';
-      window.speechSynthesis.speak(warmup);
-      speechWarmed = true;
-      if (!cachedVoice) cachedVoice = pickFriendlyVoice();
+      audioPlayer.src = './audio/well-done.m4a';
+      audioPlayer.volume = 0.001;
+      const p = audioPlayer.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
+          audioPlayer.pause();
+          audioPlayer.currentTime = 0;
+          audioPlayer.volume = 1.0;
+          audioWarmed = true;
+        }).catch(() => { /* ignore */ });
+      } else {
+        audioWarmed = true;
+      }
     } catch { /* ignore */ }
   }
 
-  function speak(text, opts = {}) {
+  function speak(text) {
     if (muted) return;
-    if (!('speechSynthesis' in window)) return;
     if (!text) return;
     try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = opts.rate ?? 0.85;
-      u.pitch = opts.pitch ?? 1.1;
-      u.volume = 1.0;
-      u.lang = 'en-US';
-      const voice = cachedVoice || pickFriendlyVoice();
-      if (voice) u.voice = voice;
-      window.speechSynthesis.speak(u);
+      const slug = nameToSlug(text);
+      audioPlayer.src = `./audio/${slug}.m4a`;
+      audioPlayer.volume = 1.0;
+      audioPlayer.currentTime = 0;
+      const p = audioPlayer.play();
+      if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
     } catch { /* ignore */ }
   }
 
-  // Warm up on the first user gesture *anywhere* — pointerdown on the stage,
-  // click on mute, touchstart on document. Safari requires the first .speak()
-  // to happen inside a real user gesture handler.
   const warmupEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
   const warmupHandler = () => {
-    warmupSpeech();
+    warmupAudio();
     warmupEvents.forEach((ev) => document.removeEventListener(ev, warmupHandler));
   };
   warmupEvents.forEach((ev) => document.addEventListener(ev, warmupHandler, { passive: true }));
