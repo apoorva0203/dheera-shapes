@@ -5,24 +5,24 @@
   const stage = document.getElementById('stage');
   const muteButton = document.getElementById('mute');
 
-  // Puzzle sizing lives in an abstract 1000-wide viewBox — heights adapt to
-  // the device's aspect ratio so the layout works on tablet portrait, phone
-  // portrait, and desktop landscape without special-casing.
+  // Layout constants — an abstract 1000-wide viewBox, heights adapt to the
+  // device's aspect ratio.
   const VIEW_W = 1000;
   let viewH = 1400;
-  let slotY = 460;      // slot row centre
-  let trayY = 1050;     // tray row centre
-  let tileSize = 180;   // rendered radius per shape
+  let slotY = 460;
+  let trayY = 1050;
+  let tileSize = 180;
 
-  // Difficulty ramp: start at 3 shapes, add one every completed puzzle up to
-  // MAX_LEVEL. Level is persisted so the kid picks up where they left off.
-  const START_LEVEL = 3;
-  const MAX_LEVEL = 8;
+  // Phase progression. Level increments after each solved puzzle and is
+  // persisted so the child picks up where they left off.
+  //   1..25   → shapes phase, count grows 3 → 8
+  //   26..51  → single letters A through Z
+  //   52..101 → random 2-letter combinations
+  //   102+    → real 3-letter words
+  const START_LEVEL = 1;
   let level = START_LEVEL;
 
-  // Runtime state.
   let currentPuzzle = null;
-  let dragging = null;
   let isTransitioning = false;
   let muted = false;
   let audioCtx = null;
@@ -48,6 +48,38 @@
     return el;
   }
 
+  // ------- item lookup (shapes + letters share one interface) -------
+
+  function itemSvgById(itemId) {
+    if (itemId.startsWith('letter-')) {
+      const letter = itemId.slice(7);
+      return letterSvg(letter);
+    }
+    const shape = SHAPES.find((s) => s.id === itemId);
+    return shape ? shape.svg : '';
+  }
+
+  function itemKind(itemId) {
+    return itemId.startsWith('letter-') ? 'letter' : 'shape';
+  }
+
+  // ------- phase resolution -------
+
+  function getPhase(lvl) {
+    if (lvl <= 25) {
+      // 3 shapes at levels 1-2, +1 every 2 levels, capped at 8.
+      const shapeCount = Math.min(3 + Math.floor((lvl - 1) / 2), 8);
+      return { name: 'shape', shapeCount };
+    }
+    if (lvl <= 51) {
+      return { name: 'letter', letter: LETTERS[lvl - 26] };
+    }
+    if (lvl <= 101) {
+      return { name: 'twoLetter' };
+    }
+    return { name: 'word' };
+  }
+
   // ------- layout -------
 
   function resizeStage() {
@@ -57,71 +89,113 @@
     viewH = Math.round(VIEW_W * ratio);
     stage.setAttribute('viewBox', `0 0 ${VIEW_W} ${viewH}`);
 
-    // More vertical air between slots and tray — a comfortable gap keeps
-    // the two rows visually separated on both tablet portrait and desktop.
     slotY = Math.round(viewH * 0.26);
     trayY = Math.round(viewH * 0.80);
 
-    // Tile size shrinks as the level grows so more shapes still fit in one
-    // row. Scaled by whichever is tighter — column width or the vertical
-    // gap between rows.
-    const count = currentPuzzle ? currentPuzzle.slots.length : level;
-    const perColumnWidth = VIEW_W / (count + 1);
+    // Tiles size to whichever axis is tighter, using the larger of slot vs
+    // tile count (letters phase has more tiles than slots because of decoys).
+    const columns = currentPuzzle
+      ? Math.max(currentPuzzle.slots.length, currentPuzzle.tiles.length)
+      : 3;
+    const perColumnWidth = VIEW_W / (columns + 1);
     const verticalGap = trayY - slotY;
     tileSize = Math.floor(Math.min(perColumnWidth * 0.42, verticalGap * 0.22, 180));
 
     if (currentPuzzle) layoutPuzzle(currentPuzzle);
   }
 
-  function slotPositions(count) {
+  function rowPositions(count, y) {
     const spacing = VIEW_W / (count + 1);
     return Array.from({ length: count }, (_, i) => ({
       x: Math.round(spacing * (i + 1)),
-      y: slotY,
-    }));
-  }
-
-  function trayPositions(count) {
-    const spacing = VIEW_W / (count + 1);
-    return Array.from({ length: count }, (_, i) => ({
-      x: Math.round(spacing * (i + 1)),
-      y: trayY,
+      y,
     }));
   }
 
   // ------- puzzle generation -------
 
   function generatePuzzle() {
-    const count = Math.min(level, MAX_LEVEL);
-    const chosen = pickN(SHAPES.map((s) => s.id), count);
-    const trayOrder = shuffle(chosen);
-    // Cycle through the palette so we never repeat a colour within one puzzle
-    // when count <= COLORS.length (always true given MAX_LEVEL < COLORS.length).
-    const trayColors = pickN(COLORS, chosen.length);
+    const phase = getPhase(level);
+    switch (phase.name) {
+      case 'shape':      return generateShapePuzzle(phase.shapeCount);
+      case 'letter':     return generateLetterPuzzle(phase.letter);
+      case 'twoLetter':  return generateTwoLetterPuzzle();
+      case 'word':       return generateWordPuzzle();
+    }
+  }
+
+  function generateShapePuzzle(count) {
+    const chosenIds = pickN(SHAPES.map((s) => s.id), count);
+    const trayIds = shuffle(chosenIds);
+    const trayColors = pickN(COLORS, chosenIds.length);
     return {
-      slots: chosen.map((id, i) => ({ id, index: i, filled: false })),
-      tiles: trayOrder.map((id, i) => ({
-        id,
-        colorIndex: i,
-        color: trayColors[i],
-        atSlotIndex: null,
-      })),
+      phase: 'shape',
+      slots: chosenIds.map((id, i) => ({ id, index: i, filled: false })),
+      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
+    };
+  }
+
+  function generateLetterPuzzle(letter) {
+    // 1 target slot + 3 tiles (target + 2 decoys) — teaches letter recognition
+    // by picking the right letter out of a few.
+    const targetId = 'letter-' + letter;
+    const decoyLetters = pickN(LETTERS.filter((l) => l !== letter), 2);
+    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
+    const trayIds = shuffle([targetId, ...decoyIds]);
+    const trayColors = pickN(COLORS, trayIds.length);
+    return {
+      phase: 'letter',
+      // Lowercase so the TTS reads the letter name only, not "capital A".
+      speak: letter.toLowerCase(),
+      slots: [{ id: targetId, index: 0, filled: false }],
+      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
+    };
+  }
+
+  function generateTwoLetterPuzzle() {
+    const chosenLetters = pickN(LETTERS, 2);
+    const targetIds = chosenLetters.map((l) => 'letter-' + l);
+    const decoyLetters = pickN(
+      LETTERS.filter((l) => !chosenLetters.includes(l)),
+      2,
+    );
+    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
+    const trayIds = shuffle([...targetIds, ...decoyIds]);
+    const trayColors = pickN(COLORS, trayIds.length);
+    return {
+      phase: 'twoLetter',
+      slots: targetIds.map((id, i) => ({ id, index: i, filled: false })),
+      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
+    };
+  }
+
+  function generateWordPuzzle() {
+    const word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+    const letters = word.split('');
+    const slotIds = letters.map((l) => 'letter-' + l);
+    // Decoys: 2 letters not already in the word.
+    const decoyLetters = pickN(
+      LETTERS.filter((l) => !letters.includes(l)),
+      2,
+    );
+    const decoyIds = decoyLetters.map((l) => 'letter-' + l);
+    const trayIds = shuffle([...slotIds, ...decoyIds]);
+    const trayColors = pickN(COLORS, trayIds.length);
+    return {
+      phase: 'word',
+      speak: word.toLowerCase(),
+      slots: slotIds.map((id, i) => ({ id, index: i, filled: false })),
+      tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
     };
   }
 
   function layoutPuzzle(puzzle) {
-    const slotPts = slotPositions(puzzle.slots.length);
-    const trayPts = trayPositions(puzzle.tiles.length);
-    puzzle.slots.forEach((s, i) => {
-      s.pos = slotPts[i];
-    });
+    const slotPts = rowPositions(puzzle.slots.length, slotY);
+    const trayPts = rowPositions(puzzle.tiles.length, trayY);
+    puzzle.slots.forEach((s, i) => { s.pos = slotPts[i]; });
     puzzle.tiles.forEach((t, i) => {
       t.homePos = trayPts[i];
-      if (t.atSlotIndex == null) {
-        t.pos = { ...t.homePos };
-      } else {
-        t.pos = { ...puzzle.slots[t.atSlotIndex].pos };
-      }
+      t.pos = t.atSlotIndex == null ? { ...t.homePos } : { ...puzzle.slots[t.atSlotIndex].pos };
     });
     renderPuzzle(puzzle);
   }
@@ -131,124 +205,149 @@
   function renderPuzzle(puzzle) {
     while (stage.firstChild) stage.removeChild(stage.firstChild);
 
-    // Slot outlines (drawn first so tiles sit on top).
     for (const slot of puzzle.slots) {
       const g = svgEl('g', {
         transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
         'data-slot-index': String(slot.index),
         fill: 'var(--slot-fill)',
         stroke: 'var(--slot-outline)',
-        'stroke-width': '3.5',
+        'stroke-width': itemKind(slot.id) === 'letter' ? '2.5' : '3.5',
         'stroke-dasharray': '6 5',
         'stroke-linejoin': 'round',
       });
-      const def = shapeById(slot.id);
-      g.innerHTML = def.svg;
+      g.innerHTML = itemSvgById(slot.id);
       stage.appendChild(g);
     }
 
-    // Tiles.
     for (const tile of puzzle.tiles) {
       const g = svgEl('g', {
         transform: `translate(${tile.pos.x}, ${tile.pos.y}) scale(${tileSize / 45})`,
-        'data-tile-color': tile.colorIndex,
+        class: 'tile',
+        style: 'cursor: grab; touch-action: none;',
+      });
+      // Invisible generous hit target so a fingertip can grab anywhere near
+      // the shape, not just on its visible fill. Larger than the shape itself.
+      const hit = svgEl('circle', {
+        cx: '0', cy: '0', r: '62',
+        fill: 'rgba(0,0,0,0.001)',
+        'pointer-events': 'all',
+      });
+      g.appendChild(hit);
+      const shape = svgEl('g', {
         fill: tile.color,
         stroke: 'rgba(0,0,0,0.05)',
         'stroke-width': '1',
-        style: 'cursor: grab; transition: transform 240ms cubic-bezier(0.34, 1.2, 0.64, 1);',
+        'pointer-events': 'none',
       });
-      const def = shapeById(tile.id);
-      g.innerHTML = def.svg;
-      // Wire drag handlers to the group.
-      g.addEventListener('pointerdown', (ev) => onPointerDown(ev, tile, g));
+      shape.innerHTML = itemSvgById(tile.id);
+      g.appendChild(shape);
       tile.node = g;
+      tile.hitNode = hit;
       stage.appendChild(g);
+      wireDrag(tile, g);
     }
   }
 
-  function shapeById(id) {
-    return SHAPES.find((s) => s.id === id);
+  // ------- drag & drop (interact.js) -------
+  //
+  // interact.js handles all touch/pointer normalisation so we don't have to
+  // fight iOS Safari quirks by hand. We convert its pixel deltas to the SVG
+  // viewBox coordinate system, then hit-test slots ourselves on end.
+
+  function wireDrag(tile, node) {
+    interact(node).draggable({
+      inertia: false,
+      autoScroll: false,
+      cursorChecker: () => 'grab',
+      listeners: {
+        start(event) {
+          if (isTransitioning) return interact(node).draggable(false), setTimeout(() => interact(node).draggable(true), 0);
+          if (tile.atSlotIndex != null) return;
+          cancelTileAnimation(tile);
+          tile.dragStageRect = stage.getBoundingClientRect();
+          node.style.cursor = 'grabbing';
+          stage.appendChild(node); // raise above peers
+          // Hint: tint matching unfilled slots so the destination stands out.
+          for (const slot of currentPuzzle.slots) {
+            const slotNode = stage.querySelector(`[data-slot-index="${slot.index}"]`);
+            if (!slotNode) continue;
+            if (slot.id === tile.id && !slot.filled) {
+              slotNode.setAttribute('fill', 'var(--hint)');
+            }
+          }
+        },
+        move(event) {
+          if (tile.atSlotIndex != null) return;
+          const rect = tile.dragStageRect || stage.getBoundingClientRect();
+          const svgDx = (event.dx / rect.width) * VIEW_W;
+          const svgDy = (event.dy / rect.height) * viewH;
+          tile.pos.x += svgDx;
+          tile.pos.y += svgDy;
+          updateTileTransform(tile, node);
+        },
+        end(event) {
+          node.style.cursor = 'grab';
+          tile.dragStageRect = null;
+          // Clear hints.
+          for (const s of currentPuzzle.slots) {
+            const sn = stage.querySelector(`[data-slot-index="${s.index}"]`);
+            if (sn) sn.setAttribute('fill', 'var(--slot-fill)');
+          }
+          if (tile.atSlotIndex != null) return;
+
+          const hit = findHitSlot(tile.pos);
+          if (hit && hit.id === tile.id && !hit.filled) {
+            tile.atSlotIndex = hit.index;
+            hit.filled = true;
+            animateTileTo(tile, node, { x: hit.pos.x, y: hit.pos.y }, 260, { pop: true });
+            playChime(0.6);
+            const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
+            if (slotNode) slotNode.setAttribute('stroke-dasharray', '0');
+            checkComplete();
+          } else {
+            animateTileTo(tile, node, { ...tile.homePos }, 360, { pop: false });
+          }
+        },
+      },
+    });
   }
 
-  // ------- drag & drop -------
-
-  function screenToStage(clientX, clientY) {
-    const rect = stage.getBoundingClientRect();
-    const x = ((clientX - rect.left) / rect.width) * VIEW_W;
-    const y = ((clientY - rect.top) / rect.height) * viewH;
-    return { x, y };
-  }
-
-  function onPointerDown(ev, tile, node) {
-    if (isTransitioning) return;
-    if (tile.atSlotIndex != null) return; // already placed
-    ev.preventDefault();
-    const p = screenToStage(ev.clientX, ev.clientY);
-    dragging = {
-      tile,
-      node,
-      grabOffset: { x: p.x - tile.pos.x, y: p.y - tile.pos.y },
-      pointerId: ev.pointerId,
-    };
-    node.setPointerCapture(ev.pointerId);
-    node.style.transition = 'none';
-    node.style.cursor = 'grabbing';
-    // Raise the dragged tile to the top so it renders above slots + peers.
-    stage.appendChild(node);
-    // Hint: fade the matching slot subtly so kid can find its home.
-    for (const slot of currentPuzzle.slots) {
-      const slotNode = stage.querySelector(`[data-slot-index="${slot.index}"]`);
-      if (!slotNode) continue;
-      if (slot.id === tile.id && !slot.filled) {
-        slotNode.setAttribute('fill', 'var(--hint)');
+  // rAF-driven tween for spring-back and snap-in. Cancels any in-flight
+  // animation on the same tile so consecutive drops don't stack.
+  function animateTileTo(tile, node, target, duration, { pop = false } = {}) {
+    cancelTileAnimation(tile);
+    const startX = tile.pos.x;
+    const startY = tile.pos.y;
+    const startTime = performance.now();
+    tile.animFrame = requestAnimationFrame(function step(now) {
+      const t = Math.min((now - startTime) / duration, 1);
+      const eased = easeOutBack(t);
+      tile.pos.x = startX + (target.x - startX) * eased;
+      tile.pos.y = startY + (target.y - startY) * eased;
+      const scaleMul = pop ? 1 + Math.sin(t * Math.PI) * 0.08 : 1;
+      updateTileTransform(tile, node, scaleMul);
+      if (t < 1) {
+        tile.animFrame = requestAnimationFrame(step);
+      } else {
+        tile.pos.x = target.x;
+        tile.pos.y = target.y;
+        updateTileTransform(tile, node);
+        tile.animFrame = null;
       }
-    }
-    node.addEventListener('pointermove', onPointerMove);
-    node.addEventListener('pointerup', onPointerUp);
-    node.addEventListener('pointercancel', onPointerUp);
+    });
   }
 
-  function onPointerMove(ev) {
-    if (!dragging || ev.pointerId !== dragging.pointerId) return;
-    const p = screenToStage(ev.clientX, ev.clientY);
-    dragging.tile.pos.x = p.x - dragging.grabOffset.x;
-    dragging.tile.pos.y = p.y - dragging.grabOffset.y;
-    updateTileTransform(dragging.tile, dragging.node);
+  function cancelTileAnimation(tile) {
+    if (tile.animFrame) {
+      cancelAnimationFrame(tile.animFrame);
+      tile.animFrame = null;
+    }
   }
 
-  function onPointerUp(ev) {
-    if (!dragging || ev.pointerId !== dragging.pointerId) return;
-    const { tile, node } = dragging;
-    // Clear hint tints.
-    for (const s of currentPuzzle.slots) {
-      const sn = stage.querySelector(`[data-slot-index="${s.index}"]`);
-      if (sn) sn.setAttribute('fill', 'var(--slot-fill)');
-    }
-    node.removeEventListener('pointermove', onPointerMove);
-    node.removeEventListener('pointerup', onPointerUp);
-    node.removeEventListener('pointercancel', onPointerUp);
-    node.style.transition = 'transform 380ms cubic-bezier(0.34, 1.2, 0.64, 1)';
-    node.style.cursor = 'grab';
-
-    // Hit-test against slots.
-    const hit = findHitSlot(tile.pos);
-    if (hit && hit.id === tile.id && !hit.filled) {
-      tile.atSlotIndex = hit.index;
-      hit.filled = true;
-      tile.pos = { ...hit.pos };
-      updateTileTransform(tile, node, 1.06);
-      setTimeout(() => updateTileTransform(tile, node, 1.0), 60);
-      playChime(0.6);
-      // Recolour matching slot outline to a softer 'settled' tint.
-      const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
-      if (slotNode) slotNode.setAttribute('stroke-dasharray', '0');
-      checkComplete();
-    } else {
-      // Spring back home.
-      tile.pos = { ...tile.homePos };
-      updateTileTransform(tile, node);
-    }
-    dragging = null;
+  function easeOutBack(t) {
+    const c1 = 1.4;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
   function findHitSlot(pos) {
@@ -271,38 +370,48 @@
     node.setAttribute('transform', `translate(${tile.pos.x}, ${tile.pos.y}) scale(${s})`);
   }
 
-  // ------- puzzle completion + reset -------
+  // ------- completion + next puzzle -------
 
   function checkComplete() {
-    if (currentPuzzle.slots.every((s) => s.filled)) {
-      isTransitioning = true;
-      // Gentle celebratory pulse on each filled tile.
-      for (const tile of currentPuzzle.tiles) {
-        if (!tile.node) continue;
-        tile.node.animate(
-          [
-            { transform: tile.node.getAttribute('transform') },
-            { transform: tile.node.getAttribute('transform') + ' scale(1.08)' },
-            { transform: tile.node.getAttribute('transform') },
-          ],
-          { duration: 700, easing: 'ease-in-out' },
-        );
-      }
-      setTimeout(() => playChime(1.0, 0.15), 250);
-      setTimeout(() => nextPuzzle(), 1400);
+    if (!currentPuzzle.slots.every((s) => s.filled)) return;
+    isTransitioning = true;
+
+    for (const tile of currentPuzzle.tiles) {
+      if (!tile.node || tile.atSlotIndex == null) continue;
+      tile.node.animate(
+        [
+          { transform: tile.node.getAttribute('transform') },
+          { transform: tile.node.getAttribute('transform') + ' scale(1.08)' },
+          { transform: tile.node.getAttribute('transform') },
+        ],
+        { duration: 700, easing: 'ease-in-out' },
+      );
     }
+
+    // Phase-specific completion cue.
+    setTimeout(() => {
+      if (currentPuzzle.phase === 'letter') {
+        speak(currentPuzzle.speak, { rate: 0.85 });
+      } else if (currentPuzzle.phase === 'word') {
+        speak(currentPuzzle.speak, { rate: 0.75 });
+      } else {
+        playChime(1.0, 0.15);
+      }
+    }, 250);
+
+    // Give speech time to finish before advancing.
+    const advanceDelay = currentPuzzle.phase === 'word' ? 2400 : 1600;
+    setTimeout(() => nextPuzzle(), advanceDelay);
   }
 
   function nextPuzzle() {
-    // Bump level after each solved puzzle (capped) so the ramp is gentle.
-    level = Math.min(level + 1, MAX_LEVEL);
+    level += 1;
     saveLevel();
-    // Fade out, generate, fade in.
     stage.style.transition = 'opacity 300ms ease';
     stage.style.opacity = '0';
     setTimeout(() => {
       currentPuzzle = generatePuzzle();
-      resizeStage(); // recompute tileSize for the new count
+      resizeStage();
       stage.style.opacity = '1';
       isTransitioning = false;
     }, 320);
@@ -312,9 +421,7 @@
     try {
       const raw = localStorage.getItem('shapes.level');
       const parsed = raw ? parseInt(raw, 10) : START_LEVEL;
-      if (Number.isFinite(parsed) && parsed >= START_LEVEL && parsed <= MAX_LEVEL) {
-        level = parsed;
-      }
+      if (Number.isFinite(parsed) && parsed >= START_LEVEL) level = parsed;
     } catch { /* ignore */ }
   }
 
@@ -341,7 +448,6 @@
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    // Warm mid-range chime around C5 / E5.
     const base = 523.25;
     osc.frequency.setValueAtTime(base * Math.pow(2, pitchOffset / 12), now);
     gain.gain.setValueAtTime(0.0001, now);
@@ -352,12 +458,55 @@
     osc.stop(now + 0.55);
   }
 
-  // ------- mute persistence + UI -------
+  // Warmest voice we can find on the device — iOS/Mac Enhanced voices sound
+  // most human. Rate + pitch are tuned soft and slow so nothing surprises.
+  let cachedVoice = null;
+  function pickFriendlyVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    if (voices.length === 0) return null;
+    const preferredNames = ['Ava', 'Samantha', 'Karen', 'Serena', 'Moira', 'Tessa', 'Fiona', 'Nicky'];
+    // Enhanced/Premium voices first — they sound noticeably more natural.
+    const enhanced = voices.filter((v) =>
+      /Enhanced|Premium/i.test(v.name) && v.lang.startsWith('en'),
+    );
+    for (const name of preferredNames) {
+      const hit = enhanced.find((v) => v.name.includes(name));
+      if (hit) return hit;
+    }
+    for (const name of preferredNames) {
+      const hit = voices.find((v) => v.name.includes(name) && v.lang.startsWith('en'));
+      if (hit) return hit;
+    }
+    return voices.find((v) => v.lang.startsWith('en-')) || voices[0];
+  }
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => { cachedVoice = pickFriendlyVoice(); };
+    cachedVoice = pickFriendlyVoice();
+  }
+
+  function speak(text, opts = {}) {
+    if (muted) return;
+    if (!('speechSynthesis' in window)) { playChime(1.0, 0.15); return; }
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = opts.rate ?? 0.75;   // slow + gentle
+      u.pitch = opts.pitch ?? 1.15; // slightly higher = warmer / less robotic
+      u.volume = 0.85;
+      u.lang = 'en-US';
+      const voice = cachedVoice || pickFriendlyVoice();
+      if (voice) u.voice = voice;
+      window.speechSynthesis.speak(u);
+    } catch {
+      playChime(1.0, 0.15);
+    }
+  }
+
+  // ------- mute UI -------
 
   function loadMute() {
-    try {
-      muted = localStorage.getItem('shapes.muted') === '1';
-    } catch { muted = false; }
+    try { muted = localStorage.getItem('shapes.muted') === '1'; } catch { muted = false; }
     updateMuteUI();
   }
 
@@ -377,6 +526,7 @@
 
   muteButton.addEventListener('click', () => {
     muted = !muted;
+    if (muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
     saveMute();
     updateMuteUI();
   });
