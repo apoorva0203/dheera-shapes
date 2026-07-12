@@ -1,7 +1,7 @@
 // Cache every static file on install so the app is fully offline after the
 // first load. Bump CACHE_VERSION whenever any of these files change so the
 // old cache is discarded on the next visit.
-const CACHE_VERSION = 'shapes-v5';
+const CACHE_VERSION = 'shapes-v6';
 const ASSETS = [
   './',
   './index.html',

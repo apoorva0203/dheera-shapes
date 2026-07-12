@@ -1,59 +1,66 @@
-// Shape library. Each shape has a centred, unit-ish bounding box in the
-// range [-45, 45]. Colours are applied via `fill` on the parent <g>.
+// Shape library. Each shape has a centred [-45..45] bounding box, an `id`
+// (stable string used everywhere), and a `name` (what the voice reads aloud).
+// Names are the plain word a young child would say — "cross" not "cross X",
+// "moon" not "crescent", "arrow" not "arrow-right".
 
 const SHAPES = [
-  { id: 'circle',        svg: '<circle cx="0" cy="0" r="42" />' },
-  { id: 'square',        svg: '<rect x="-40" y="-40" width="80" height="80" rx="8" ry="8" />' },
-  { id: 'triangle',      svg: '<polygon points="0,-46 40,26 -40,26" />' },
-  { id: 'pentagon',      svg: '<polygon points="0,-45 43,-14 27,36 -27,36 -43,-14" />' },
-  { id: 'hexagon',       svg: '<polygon points="0,-45 39,-22 39,22 0,45 -39,22 -39,-22" />' },
-  { id: 'star5',         svg: '<polygon points="0,-46 13,-14 46,-14 20,7 30,40 0,20 -30,40 -20,7 -46,-14 -13,-14" />' },
-  { id: 'heart',         svg: '<path d="M 0 40 C -30 15, -46 -5, -32 -25 C -20 -40, -5 -35, 0 -20 C 5 -35, 20 -40, 32 -25 C 46 -5, 30 15, 0 40 Z" />' },
-  { id: 'diamond',       svg: '<polygon points="0,-45 42,0 0,45 -42,0" />' },
-  { id: 'oval',          svg: '<ellipse cx="0" cy="0" rx="46" ry="32" />' },
-  { id: 'plus',          svg: '<polygon points="-15,-45 15,-45 15,-15 45,-15 45,15 15,15 15,45 -15,45 -15,15 -45,15 -45,-15 -15,-15" />' },
-  { id: 'trapezoid',     svg: '<polygon points="-42,30 42,30 26,-30 -26,-30" />' },
-  { id: 'parallelogram', svg: '<polygon points="-46,26 22,26 46,-26 -22,-26" />' },
-  { id: 'semicircle',    svg: '<path d="M -44,10 A 44,44 0 0 1 44,10 L 44,20 L -44,20 Z" />' },
-  { id: 'crescent',      svg: '<path d="M 20 -40 A 44 44 0 1 0 20 40 A 34 34 0 1 1 20 -40 Z" />' },
-  { id: 'arrow-right',   svg: '<polygon points="-40,-15 10,-15 10,-32 44,0 10,32 10,15 -40,15" />' },
-  { id: 'arrow-up',      svg: '<polygon points="-15,40 -15,-10 -32,-10 0,-44 32,-10 15,-10 15,40" />' },
-  { id: 'chevron',       svg: '<polygon points="-42,-18 0,20 42,-18 30,-30 0,-2 -30,-30" />' },
-  { id: 'flower',        svg: '<path d="M 0,-42 C 18,-42 26,-18 12,-6 C 30,-18 42,4 30,18 C 42,4 22,32 6,20 C 22,32 -6,42 -12,26 C -6,42 -34,26 -22,10 C -34,26 -34,-18 -14,-14 C -34,-18 -18,-42 0,-42 Z" />' },
-  { id: 'sun',           svg: '<g><circle cx="0" cy="0" r="22" /><g stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="0" y1="-42" x2="0" y2="-30"/><line x1="0" y1="42" x2="0" y2="30"/><line x1="-42" y1="0" x2="-30" y2="0"/><line x1="42" y1="0" x2="30" y2="0"/><line x1="-30" y1="-30" x2="-22" y2="-22"/><line x1="30" y1="30" x2="22" y2="22"/><line x1="-30" y1="30" x2="-22" y2="22"/><line x1="30" y1="-30" x2="22" y2="-22"/></g></g>' },
-  { id: 'cross-x',       svg: '<polygon points="-32,-42 0,-10 32,-42 42,-32 10,0 42,32 32,42 0,10 -32,42 -42,32 -10,0 -42,-32" />' },
-  { id: 'ring',          svg: '<path d="M -44,0 A 44,44 0 1 1 44,0 A 44,44 0 1 1 -44,0 Z M -22,0 A 22,22 0 1 0 22,0 A 22,22 0 1 0 -22,0 Z" fill-rule="evenodd" />' },
-  { id: 'star6',         svg: '<polygon points="0,-44 12,-22 38,-22 22,0 38,22 12,22 0,44 -12,22 -38,22 -22,0 -38,-22 -12,-22" />' },
-  { id: 'kite',          svg: '<polygon points="0,-44 32,-4 0,44 -32,-4" />' },
-  { id: 'cloud',         svg: '<path d="M -32,10 C -50,10 -50,-14 -32,-14 C -30,-30 -8,-32 -2,-20 C 4,-32 26,-30 26,-14 C 44,-14 44,10 26,10 Z" />' },
-  { id: 'lightning',     svg: '<polygon points="8,-44 -30,4 -6,4 -12,44 26,-8 4,-8 12,-44" />' },
+  { id: 'circle',        name: 'circle',        svg: '<circle cx="0" cy="0" r="42" />' },
+  { id: 'square',        name: 'square',        svg: '<rect x="-40" y="-40" width="80" height="80" rx="8" ry="8" />' },
+  { id: 'triangle',      name: 'triangle',      svg: '<polygon points="0,-46 40,26 -40,26" />' },
+  { id: 'pentagon',      name: 'pentagon',      svg: '<polygon points="0,-45 43,-14 27,36 -27,36 -43,-14" />' },
+  { id: 'hexagon',       name: 'hexagon',       svg: '<polygon points="0,-45 39,-22 39,22 0,45 -39,22 -39,-22" />' },
+  { id: 'star5',         name: 'star',          svg: '<polygon points="0,-46 13,-14 46,-14 20,7 30,40 0,20 -30,40 -20,7 -46,-14 -13,-14" />' },
+  { id: 'heart',         name: 'heart',         svg: '<path d="M 0 40 C -30 15, -46 -5, -32 -25 C -20 -40, -5 -35, 0 -20 C 5 -35, 20 -40, 32 -25 C 46 -5, 30 15, 0 40 Z" />' },
+  { id: 'diamond',       name: 'diamond',       svg: '<polygon points="0,-45 42,0 0,45 -42,0" />' },
+  { id: 'oval',          name: 'oval',          svg: '<ellipse cx="0" cy="0" rx="46" ry="32" />' },
+  { id: 'plus',          name: 'plus',          svg: '<polygon points="-15,-45 15,-45 15,-15 45,-15 45,15 15,15 15,45 -15,45 -15,15 -45,15 -45,-15 -15,-15" />' },
+  { id: 'trapezoid',     name: 'trapezoid',     svg: '<polygon points="-42,30 42,30 26,-30 -26,-30" />' },
+  { id: 'parallelogram', name: 'parallelogram', svg: '<polygon points="-46,26 22,26 46,-26 -22,-26" />' },
+  { id: 'semicircle',    name: 'half circle',   svg: '<path d="M -44,10 A 44,44 0 0 1 44,10 L 44,20 L -44,20 Z" />' },
+  { id: 'crescent',      name: 'moon',          svg: '<path d="M 20 -40 A 44 44 0 1 0 20 40 A 34 34 0 1 1 20 -40 Z" />' },
+  { id: 'arrow-right',   name: 'arrow',         svg: '<polygon points="-40,-15 10,-15 10,-32 44,0 10,32 10,15 -40,15" />' },
+  { id: 'arrow-up',      name: 'arrow',         svg: '<polygon points="-15,40 -15,-10 -32,-10 0,-44 32,-10 15,-10 15,40" />' },
+  { id: 'chevron',       name: 'chevron',       svg: '<polygon points="-42,-18 0,20 42,-18 30,-30 0,-2 -30,-30" />' },
+  { id: 'flower',        name: 'flower',        svg: '<path d="M 0,-42 C 18,-42 26,-18 12,-6 C 30,-18 42,4 30,18 C 42,4 22,32 6,20 C 22,32 -6,42 -12,26 C -6,42 -34,26 -22,10 C -34,26 -34,-18 -14,-14 C -34,-18 -18,-42 0,-42 Z" />' },
+  { id: 'sun',           name: 'sun',           svg: '<g><circle cx="0" cy="0" r="22" /><g stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="0" y1="-42" x2="0" y2="-30"/><line x1="0" y1="42" x2="0" y2="30"/><line x1="-42" y1="0" x2="-30" y2="0"/><line x1="42" y1="0" x2="30" y2="0"/><line x1="-30" y1="-30" x2="-22" y2="-22"/><line x1="30" y1="30" x2="22" y2="22"/><line x1="-30" y1="30" x2="-22" y2="22"/><line x1="30" y1="-30" x2="22" y2="-22"/></g></g>' },
+  { id: 'cross-x',       name: 'cross',         svg: '<polygon points="-32,-42 0,-10 32,-42 42,-32 10,0 42,32 32,42 0,10 -32,42 -42,32 -10,0 -42,-32" />' },
+  { id: 'ring',          name: 'ring',          svg: '<path d="M -44,0 A 44,44 0 1 1 44,0 A 44,44 0 1 1 -44,0 Z M -22,0 A 22,22 0 1 0 22,0 A 22,22 0 1 0 -22,0 Z" fill-rule="evenodd" />' },
+  { id: 'star6',         name: 'star',          svg: '<polygon points="0,-44 12,-22 38,-22 22,0 38,22 12,22 0,44 -12,22 -38,22 -22,0 -38,-22 -12,-22" />' },
+  { id: 'kite',          name: 'kite',          svg: '<polygon points="0,-44 32,-4 0,44 -32,-4" />' },
+  { id: 'cloud',         name: 'cloud',         svg: '<path d="M -32,10 C -50,10 -50,-14 -32,-14 C -30,-30 -8,-32 -2,-20 C 4,-32 26,-30 26,-14 C 44,-14 44,10 26,10 Z" />' },
+  { id: 'lightning',     name: 'lightning',     svg: '<polygon points="8,-44 -30,4 -6,4 -12,44 26,-8 4,-8 12,-44" />' },
 
-  // Material-style solid icons — kid-friendly, all rendered as flat silhouettes.
-  { id: 'house',         svg: '<path d="M -38 -4 L 0 -40 L 38 -4 L 38 38 L 12 38 L 12 10 L -12 10 L -12 38 L -38 38 Z" />' },
-  { id: 'car',           svg: '<path d="M -40 6 L -32 -12 L -14 -22 L 14 -22 L 32 -12 L 40 6 L 40 22 Q 40 26 36 26 L -36 26 Q -40 26 -40 22 Z M -22 30 A 8 8 0 1 1 -6 30 A 8 8 0 1 1 -22 30 Z M 6 30 A 8 8 0 1 1 22 30 A 8 8 0 1 1 6 30 Z" />' },
-  { id: 'tree',          svg: '<polygon points="0,-42 -24,-12 -14,-12 -30,10 -18,10 -34,32 34,32 18,10 30,10 14,-12 24,-12" /><rect x="-7" y="32" width="14" height="12" />' },
-  { id: 'apple',         svg: '<circle cx="0" cy="6" r="34" /><path d="M -2 -38 L 2 -38 L 4 -26 L -4 -26 Z" /><ellipse cx="10" cy="-30" rx="8" ry="5" transform="rotate(20 10 -30)" />' },
-  { id: 'balloon',       svg: '<ellipse cx="0" cy="-4" rx="28" ry="34" /><polygon points="-4,28 4,28 3,42 -3,42" />' },
-  { id: 'gift',          svg: '<rect x="-38" y="-10" width="76" height="50" rx="4" /><rect x="-7" y="-10" width="14" height="50" /><rect x="-38" y="8" width="76" height="10" /><path d="M -18 -18 Q -18 -30 -6 -30 Q 0 -30 0 -20 Q 0 -30 6 -30 Q 18 -30 18 -18 L 18 -10 L -18 -10 Z" />' },
-  { id: 'rocket',        svg: '<path d="M 0 -42 L -16 -12 L -16 24 Q -16 28 -12 28 L 12 28 Q 16 28 16 24 L 16 -12 Z M -16 24 L -26 40 L -18 34 Z M 16 24 L 26 40 L 18 34 Z" /><circle cx="0" cy="-8" r="7" fill="white" />' },
-  { id: 'fish',          svg: '<path d="M -38 0 Q -34 -22 -6 -20 Q 4 -12 12 -8 L 34 -22 L 34 22 L 12 8 Q 4 12 -6 20 Q -34 22 -38 0 Z" /><circle cx="-16" cy="-6" r="4" fill="white" />' },
-  { id: 'icecream',      svg: '<circle cx="0" cy="-14" r="20" /><circle cx="-14" cy="-24" r="14" /><circle cx="14" cy="-24" r="14" /><polygon points="-22,6 22,6 0,42" />' },
-  { id: 'leaf',          svg: '<path d="M -30 30 Q -40 -20 0 -40 Q 40 -20 30 30 Q 20 34 0 32 Q -20 34 -30 30 Z M 0 -40 L 0 32" fill-rule="nonzero" stroke-linejoin="round" />' },
+  // Material-style solid icons.
+  { id: 'house',         name: 'house',         svg: '<path d="M -38 -4 L 0 -40 L 38 -4 L 38 38 L 12 38 L 12 10 L -12 10 L -12 38 L -38 38 Z" />' },
+  { id: 'car',           name: 'car',           svg: '<path d="M -40 6 L -32 -12 L -14 -22 L 14 -22 L 32 -12 L 40 6 L 40 22 Q 40 26 36 26 L -36 26 Q -40 26 -40 22 Z M -22 30 A 8 8 0 1 1 -6 30 A 8 8 0 1 1 -22 30 Z M 6 30 A 8 8 0 1 1 22 30 A 8 8 0 1 1 6 30 Z" />' },
+  { id: 'tree',          name: 'tree',          svg: '<polygon points="0,-42 -24,-12 -14,-12 -30,10 -18,10 -34,32 34,32 18,10 30,10 14,-12 24,-12" /><rect x="-7" y="32" width="14" height="12" />' },
+  { id: 'apple',         name: 'apple',         svg: '<circle cx="0" cy="6" r="34" /><path d="M -2 -38 L 2 -38 L 4 -26 L -4 -26 Z" /><ellipse cx="10" cy="-30" rx="8" ry="5" transform="rotate(20 10 -30)" />' },
+  { id: 'balloon',       name: 'balloon',       svg: '<ellipse cx="0" cy="-4" rx="28" ry="34" /><polygon points="-4,28 4,28 3,42 -3,42" />' },
+  { id: 'gift',          name: 'present',       svg: '<rect x="-38" y="-10" width="76" height="50" rx="4" /><rect x="-7" y="-10" width="14" height="50" /><rect x="-38" y="8" width="76" height="10" /><path d="M -18 -18 Q -18 -30 -6 -30 Q 0 -30 0 -20 Q 0 -30 6 -30 Q 18 -30 18 -18 L 18 -10 L -18 -10 Z" />' },
+  { id: 'rocket',        name: 'rocket',        svg: '<path d="M 0 -42 L -16 -12 L -16 24 Q -16 28 -12 28 L 12 28 Q 16 28 16 24 L 16 -12 Z M -16 24 L -26 40 L -18 34 Z M 16 24 L 26 40 L 18 34 Z" /><circle cx="0" cy="-8" r="7" fill="white" />' },
+  { id: 'fish',          name: 'fish',          svg: '<path d="M -38 0 Q -34 -22 -6 -20 Q 4 -12 12 -8 L 34 -22 L 34 22 L 12 8 Q 4 12 -6 20 Q -34 22 -38 0 Z" /><circle cx="-16" cy="-6" r="4" fill="white" />' },
+  { id: 'icecream',      name: 'ice cream',     svg: '<circle cx="0" cy="-14" r="20" /><circle cx="-14" cy="-24" r="14" /><circle cx="14" cy="-24" r="14" /><polygon points="-22,6 22,6 0,42" />' },
+  { id: 'leaf',          name: 'leaf',          svg: '<path d="M -30 30 Q -40 -20 0 -40 Q 40 -20 30 30 Q 20 34 0 32 Q -20 34 -30 30 Z M 0 -40 L 0 32" fill-rule="nonzero" stroke-linejoin="round" />' },
+
+  { id: 'flag',          name: 'flag',          svg: '<rect x="-3" y="-42" width="6" height="84" rx="1" /><polygon points="3,-42 34,-30 3,-18" />' },
+  { id: 'bell',          name: 'bell',          svg: '<path d="M 0 -36 Q -22 -36 -22 -14 L -22 8 L -30 18 L 30 18 L 22 8 L 22 -14 Q 22 -36 0 -36 Z" /><circle cx="0" cy="26" r="6" />' },
+  { id: 'crown',         name: 'crown',         svg: '<polygon points="-38,32 -30,-8 -14,12 -6,-30 6,-30 14,12 30,-8 38,32" /><rect x="-38" y="30" width="76" height="10" />' },
+  { id: 'cup',           name: 'cup',           svg: '<path d="M -28 -22 L 22 -22 L 18 36 L -24 36 Z" /><path d="M 22 -10 L 40 -10 L 40 22 L 22 22 L 22 14 L 32 14 L 32 -2 L 22 -2 Z" />' },
+  { id: 'envelope',      name: 'envelope',      svg: '<rect x="-38" y="-22" width="76" height="52" rx="3" /><polygon points="-38,-22 0,10 38,-22 38,-14 0,18 -38,-14" fill-opacity="0.35" />' },
+  { id: 'umbrella',      name: 'umbrella',      svg: '<path d="M -42 4 Q -42 -38 0 -38 Q 42 -38 42 4 L 34 4 L 30 -4 L 22 4 L 18 -4 L 10 4 L 6 -4 L -2 4 L -6 -4 L -14 4 L -18 -4 L -26 4 L -30 -4 L -38 4 Z" /><rect x="-3" y="4" width="6" height="38" />' },
+  { id: 'anchor',        name: 'anchor',        svg: '<circle cx="0" cy="-32" r="8" /><rect x="-3" y="-24" width="6" height="52" /><rect x="-22" y="-6" width="44" height="6" /><path d="M -32 20 Q -36 2 -20 2 L -14 10 Q -24 12 -24 22 Z M 32 20 Q 36 2 20 2 L 14 10 Q 24 12 24 22 Z" />' },
+  { id: 'plane',         name: 'airplane',      svg: '<path d="M -42 -4 L -18 -4 L -12 -22 L -2 -22 L -6 -4 L 42 -4 L 42 4 L -6 4 L -2 22 L -12 22 L -18 4 L -42 4 Z" />' },
+  { id: 'boat',          name: 'boat',          svg: '<polygon points="-2,-42 -2,14 22,14" /><polygon points="-32,20 32,20 24,34 -24,34" />' },
+  { id: 'cactus',        name: 'cactus',        svg: '<rect x="-8" y="-32" width="16" height="72" rx="6" /><path d="M -8 -8 L -22 -8 L -22 -22 L -30 -22 L -30 -34 L -22 -34 L -22 -16 L -8 -16 Z" /><path d="M 8 4 L 22 4 L 22 -10 L 30 -10 L 30 -22 L 22 -22 L 22 -4 L 8 -4 Z" />' },
+  { id: 'camera',        name: 'camera',        svg: '<rect x="-40" y="-22" width="80" height="52" rx="6" /><polygon points="-20,-22 -12,-32 12,-32 20,-22" /><circle cx="0" cy="6" r="16" fill-opacity="0.35" /><circle cx="0" cy="6" r="10" />' },
+  { id: 'cookie',        name: 'cookie',        svg: '<circle cx="0" cy="0" r="40" /><circle cx="-14" cy="-14" r="5" fill-opacity="0.35" /><circle cx="16" cy="-6" r="6" fill-opacity="0.35" /><circle cx="-10" cy="14" r="4" fill-opacity="0.35" /><circle cx="14" cy="18" r="5" fill-opacity="0.35" />' },
+  { id: 'snowflake',     name: 'snowflake',     svg: '<rect x="-3" y="-42" width="6" height="84" rx="1" /><rect x="-42" y="-3" width="84" height="6" rx="1" transform="rotate(60)" /><rect x="-42" y="-3" width="84" height="6" rx="1" transform="rotate(-60)" /><circle cx="0" cy="0" r="6" />' },
+  { id: 'pencil',        name: 'pencil',        svg: '<polygon points="-30,-30 -22,-38 32,16 24,24" /><polygon points="-30,-30 -38,-22 -22,-38" /><polygon points="24,24 32,16 34,32 22,32" />' },
+  { id: 'watermelon',    name: 'watermelon',    svg: '<path d="M -42 0 A 42 42 0 0 1 42 0 L -42 0 Z" /><path d="M -36 0 A 36 36 0 0 1 36 0 L -36 0 Z" fill-opacity="0.35" /><circle cx="-16" cy="12" r="3" fill-opacity="0.6" /><circle cx="0" cy="18" r="3" fill-opacity="0.6" /><circle cx="16" cy="12" r="3" fill-opacity="0.6" />' },
 ];
 
 const COLORS = [
-  '#6BB6FF', // sky blue
-  '#7BC47F', // sage green
-  '#FFA07A', // warm coral
-  '#F5B5C0', // dusty pink
-  '#B39DDB', // lavender
-  '#E8B84A', // mustard
-  '#4DB6AC', // teal
-  '#FFCB77', // peach
-  '#98D8C8', // seafoam
-  '#F4A6C6', // rose
-  '#A7C7E7', // powder blue
-  '#C8B6E2', // pale purple
-  '#EBC4A0', // sand
-  '#B7D7B0', // soft mint
+  '#6BB6FF', '#7BC47F', '#FFA07A', '#F5B5C0', '#B39DDB',
+  '#E8B84A', '#4DB6AC', '#FFCB77', '#98D8C8', '#F4A6C6',
+  '#A7C7E7', '#C8B6E2', '#EBC4A0', '#B7D7B0',
 ];

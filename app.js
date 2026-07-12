@@ -53,6 +53,11 @@
     return shape ? shape.svg : '';
   }
 
+  function itemNameById(itemId) {
+    const shape = SHAPES.find((s) => s.id === itemId);
+    return shape ? shape.name : '';
+  }
+
   function shapeCountForLevel(lvl) {
     // 3 shapes at levels 1-2, +1 every 2 levels, capped at MAX_SHAPE_COUNT.
     return Math.min(3 + Math.floor((lvl - 1) / 2), MAX_SHAPE_COUNT);
@@ -214,7 +219,7 @@
             tile.atSlotIndex = hit.index;
             hit.filled = true;
             animateTileTo(tile, node, { x: hit.pos.x, y: hit.pos.y }, 260, { pop: true });
-            playChime(0.6);
+            speak(itemNameById(tile.id));
             const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
             if (slotNode) slotNode.setAttribute('stroke-dasharray', '0');
             checkComplete();
@@ -302,8 +307,8 @@
       );
     }
 
-    setTimeout(() => playChime(1.0, 0.15), 250);
-    setTimeout(() => nextPuzzle(), 1600);
+    setTimeout(() => speak('well done', { rate: 0.8, pitch: 1.1 }), 400);
+    setTimeout(() => nextPuzzle(), 2000);
   }
 
   function nextPuzzle() {
@@ -360,6 +365,79 @@
     osc.stop(now + 0.55);
   }
 
+  // ------- speech -------
+  //
+  // iOS Safari (especially in standalone / PWA mode) is finicky about
+  // speechSynthesis: voices don't populate until after a real user gesture,
+  // and utterances silently fail if the engine hasn't been "warmed up." We
+  // pick the friendliest available voice, warm the engine on the first
+  // pointerdown, and re-query voices whenever the OS finally loads them.
+
+  let cachedVoice = null;
+  let speechWarmed = false;
+
+  function pickFriendlyVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = window.speechSynthesis.getVoices() || [];
+    if (voices.length === 0) return null;
+    const preferredNames = ['Ava', 'Samantha', 'Karen', 'Serena', 'Moira', 'Tessa', 'Fiona', 'Nicky'];
+    const enhanced = voices.filter((v) =>
+      /Enhanced|Premium/i.test(v.name) && v.lang.startsWith('en'),
+    );
+    for (const name of preferredNames) {
+      const hit = enhanced.find((v) => v.name.includes(name));
+      if (hit) return hit;
+    }
+    for (const name of preferredNames) {
+      const hit = voices.find((v) => v.name.includes(name) && v.lang.startsWith('en'));
+      if (hit) return hit;
+    }
+    return voices.find((v) => v.lang.startsWith('en-')) || voices[0];
+  }
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => { cachedVoice = pickFriendlyVoice(); };
+    cachedVoice = pickFriendlyVoice();
+  }
+
+  function warmupSpeech() {
+    if (speechWarmed) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      // Speaking a silent (very short) utterance from a user gesture unlocks
+      // the engine on iOS. It also triggers voice loading in some builds.
+      const warmup = new SpeechSynthesisUtterance(' ');
+      warmup.volume = 0;
+      warmup.rate = 1;
+      warmup.lang = 'en-US';
+      window.speechSynthesis.speak(warmup);
+      speechWarmed = true;
+      if (!cachedVoice) cachedVoice = pickFriendlyVoice();
+    } catch { /* ignore */ }
+  }
+
+  function speak(text, opts = {}) {
+    if (muted) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      // On some iOS builds the queue stays paused unless we explicitly
+      // resume — cheap idempotent call.
+      window.speechSynthesis.resume();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = opts.rate ?? 0.85;
+      u.pitch = opts.pitch ?? 1.1;
+      u.volume = 0.95;
+      u.lang = 'en-US';
+      const voice = cachedVoice || pickFriendlyVoice();
+      if (voice) u.voice = voice;
+      window.speechSynthesis.speak(u);
+    } catch { /* ignore */ }
+  }
+
+  // Warm up on the first pointer contact anywhere on the stage — a real
+  // user gesture is required for iOS to unlock audio/speech in PWAs.
+  stage.addEventListener('pointerdown', warmupSpeech, { once: true });
+
   // ------- mute UI -------
 
   function loadMute() {
@@ -383,6 +461,7 @@
 
   muteButton.addEventListener('click', () => {
     muted = !muted;
+    if (muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
     saveMute();
     updateMuteUI();
   });
