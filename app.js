@@ -352,8 +352,61 @@
       );
     }
 
-    setTimeout(() => speak('well done'), 400);
-    setTimeout(() => nextPuzzle(), 2200);
+    launchConfetti();
+    setTimeout(() => speak('well done'), 500);
+    setTimeout(() => nextPuzzle(), 3200);
+  }
+
+  // Simple confetti — colourful squares + circles rain from the top of the
+  // stage with real gravity + rotation. rAF-driven; container is torn down
+  // once every piece falls off the bottom.
+  function launchConfetti() {
+    const pieces = 60;
+    const container = svgEl('g');
+    container.setAttribute('pointer-events', 'none');
+    stage.appendChild(container);
+
+    const items = [];
+    for (let i = 0; i < pieces; i += 1) {
+      const size = 8 + Math.random() * 12;
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+      const isCircle = Math.random() < 0.4;
+      const shape = isCircle
+        ? svgEl('circle', { cx: '0', cy: '0', r: String(size / 2), fill: color })
+        : svgEl('rect', {
+            x: String(-size / 2), y: String(-size / 2),
+            width: String(size), height: String(size),
+            fill: color, rx: '2',
+          });
+      container.appendChild(shape);
+      items.push({
+        node: shape,
+        x: Math.random() * VIEW_W,
+        y: -30 - Math.random() * 100,
+        vx: (Math.random() - 0.5) * 260,
+        vy: 80 + Math.random() * 160,
+        rot: Math.random() * 360,
+        rotV: (Math.random() - 0.5) * 480,
+      });
+    }
+
+    let last = performance.now();
+    function step(now) {
+      const dt = Math.min((now - last) / 1000, 0.05);
+      last = now;
+      let alive = false;
+      for (const c of items) {
+        c.vy += 900 * dt; // gravity
+        c.x += c.vx * dt;
+        c.y += c.vy * dt;
+        c.rot += c.rotV * dt;
+        c.node.setAttribute('transform', `translate(${c.x} ${c.y}) rotate(${c.rot})`);
+        if (c.y < viewH + 60) alive = true;
+      }
+      if (alive) requestAnimationFrame(step);
+      else container.remove();
+    }
+    requestAnimationFrame(step);
   }
 
   function nextPuzzle() {
