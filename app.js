@@ -473,7 +473,6 @@
   // including async callbacks. Files load once, decoded into AudioBuffers,
   // then start() is cheap.
 
-  let audioCtx = null;
   const bufferCache = new Map(); // slug → AudioBuffer or Promise<AudioBuffer>
   let audioWarmed = false;
 
@@ -533,10 +532,16 @@
     } catch (e) { debugToast('warmup throw ' + e); }
   }
 
-  // Toggle audio debug overlay via URL param ?debug=1 (or localStorage key).
-  const DEBUG_AUDIO =
-    new URLSearchParams(location.search).get('debug') === '1' ||
-    (() => { try { return localStorage.getItem('shapes.debug') === '1'; } catch { return false; } })();
+  // Debug overlay defaults ON while we're diagnosing audio. Triple-tap the
+  // mute button (or ?debug=0 in the URL) to turn it off.
+  const DEBUG_AUDIO = (() => {
+    if (new URLSearchParams(location.search).get('debug') === '0') return false;
+    try {
+      const v = localStorage.getItem('shapes.debug');
+      if (v === '0') return false;
+    } catch { /* ignore */ }
+    return true;
+  })();
   function debugToast(msg) {
     if (!DEBUG_AUDIO) return;
     const div = document.createElement('div');
@@ -642,4 +647,7 @@
 
   window.addEventListener('resize', resizeStage);
   window.addEventListener('orientationchange', resizeStage);
+
+  // Fires *after* debugToast is fully defined; confirms the app booted.
+  setTimeout(() => debugToast('boot v18 muted=' + muted), 100);
 })();
