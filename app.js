@@ -445,35 +445,59 @@
       warmupPlayer.currentTime = 0;
       const p = warmupPlayer.play();
       if (p && typeof p.then === 'function') {
-        p.then(() => { audioWarmed = true; }).catch(() => { /* ignore */ });
+        p.then(() => { audioWarmed = true; debugToast('warmup ok'); })
+         .catch((err) => { debugToast('warmup err: ' + (err?.name || err?.message || err)); });
       } else {
         audioWarmed = true;
+        debugToast('warmup ok (no promise)');
       }
-    } catch { /* ignore */ }
+    } catch (e) { debugToast('warmup throw ' + e); }
+  }
+
+  // Toggle audio debug overlay via URL param ?debug=1 (or localStorage key).
+  const DEBUG_AUDIO =
+    new URLSearchParams(location.search).get('debug') === '1' ||
+    (() => { try { return localStorage.getItem('shapes.debug') === '1'; } catch { return false; } })();
+  function debugToast(msg) {
+    if (!DEBUG_AUDIO) return;
+    const div = document.createElement('div');
+    div.textContent = msg;
+    div.style.cssText =
+      'position: fixed; top: 12px; left: 12px; background: rgba(0,0,0,0.78); ' +
+      'color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; ' +
+      'font-family: -apple-system, monospace; z-index: 9999; max-width: 65vw; ' +
+      'word-break: break-word;';
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 3000);
   }
 
   function speak(text) {
-    if (muted) return;
+    if (muted) { debugToast('muted → skip ' + text); return; }
     if (!text) return;
+    const slug = nameToSlug(text);
     try {
-      const audio = getAudioFor(nameToSlug(text));
+      const audio = getAudioFor(slug);
       audio.volume = 1.0;
       audio.currentTime = 0;
-      // Re-warm the engine every time — cheap and covers iOS "audio dropped
-      // out after backgrounding" quirks. If .play() rejects, fall back to
-      // recreating the Audio (some iOS builds get into a bad state where a
-      // cached instance stops responding).
       const p = audio.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          try {
-            const fresh = new Audio(audio.src);
-            fresh.volume = 1.0;
-            fresh.play().catch(() => { /* ignore */ });
-          } catch { /* ignore */ }
-        });
+      if (p && typeof p.then === 'function') {
+        p.then(() => debugToast('▶ ' + slug))
+         .catch((err) => {
+           debugToast('play err ' + slug + ': ' + (err?.name || err?.message || err));
+           try {
+             const fresh = new Audio(audio.src);
+             fresh.volume = 1.0;
+             fresh.play()
+               .then(() => debugToast('▶ (retry) ' + slug))
+               .catch((e) => debugToast('retry err ' + slug + ': ' + (e?.name || e?.message || e)));
+           } catch (e) { debugToast('retry throw ' + slug + ': ' + e); }
+         });
+      } else {
+        debugToast('▶ (no promise) ' + slug);
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      debugToast('speak throw ' + slug + ': ' + e);
+    }
   }
 
   const warmupEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
@@ -504,11 +528,25 @@
     }
   }
 
+  // Triple-tap the mute button within 800ms to toggle debug overlay. Won't
+  // fire on the first two taps — they still fall through to the mute toggle
+  // below (mute goes off, then on, ending in original state on tap #3).
+  let clickTimestamps = [];
   muteButton.addEventListener('click', () => {
     muted = !muted;
-    if (muted && 'speechSynthesis' in window) window.speechSynthesis.cancel();
     saveMute();
     updateMuteUI();
+    const now = Date.now();
+    clickTimestamps = clickTimestamps.filter((t) => now - t < 800);
+    clickTimestamps.push(now);
+    if (clickTimestamps.length >= 3) {
+      clickTimestamps = [];
+      try {
+        const on = localStorage.getItem('shapes.debug') !== '1';
+        localStorage.setItem('shapes.debug', on ? '1' : '0');
+        location.reload();
+      } catch { /* ignore */ }
+    }
   });
 
   // ------- boot -------
