@@ -56,10 +56,10 @@
     const item = itemById(itemId);
     if (!item) return '';
     if (item.kind === 'emoji') {
-      // Emoji rendered via SVG <text>. font-size 76 puts the glyph roughly in
-      // the [-45..45] box on iOS Safari's default emoji font. Adjust if the
-      // system font changes.
-      return `<text x="0" y="0" font-size="76" text-anchor="middle" dominant-baseline="central">${item.emoji}</text>`;
+      // Real SVG file (Twemoji) — CSS filters (grayscale) apply reliably to
+      // <image>, unlike native emoji glyphs which iOS bypasses filters on.
+      // File is named by the item's `name` (see /emoji/<name>.svg).
+      return `<image href="./emoji/${item.name}.svg" x="-45" y="-45" width="90" height="90" preserveAspectRatio="xMidYMid meet" />`;
     }
     return item.svg;
   }
@@ -459,8 +459,20 @@
       const audio = getAudioFor(nameToSlug(text));
       audio.volume = 1.0;
       audio.currentTime = 0;
+      // Re-warm the engine every time — cheap and covers iOS "audio dropped
+      // out after backgrounding" quirks. If .play() rejects, fall back to
+      // recreating the Audio (some iOS builds get into a bad state where a
+      // cached instance stops responding).
       const p = audio.play();
-      if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => {
+          try {
+            const fresh = new Audio(audio.src);
+            fresh.volume = 1.0;
+            fresh.play().catch(() => { /* ignore */ });
+          } catch { /* ignore */ }
+        });
+      }
     } catch { /* ignore */ }
   }
 
