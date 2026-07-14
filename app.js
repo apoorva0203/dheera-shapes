@@ -150,7 +150,7 @@
         ? {
             transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
             'data-slot-index': String(slot.index),
-            opacity: '0.28',
+            style: 'filter: grayscale(1); opacity: 0.5;',
           }
         : {
             transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
@@ -221,7 +221,9 @@
             if (!slotNode) continue;
             if (slot.id === tile.id && !slot.filled) {
               if (itemKind(slot.id) === 'emoji') {
-                slotNode.setAttribute('opacity', '0.6');
+                // Drop grayscale and boost opacity — the matching emoji
+                // "lights up" in colour while other slots stay dim + gray.
+                slotNode.setAttribute('style', 'filter: none; opacity: 0.85;');
               } else {
                 slotNode.setAttribute('stroke-width', '5.5');
               }
@@ -247,9 +249,9 @@
             if (!sn) continue;
             const kind = itemKind(s.id);
             if (s.filled) {
-              sn.setAttribute('opacity', '0');
+              sn.setAttribute('style', 'opacity: 0;');
             } else if (kind === 'emoji') {
-              sn.setAttribute('opacity', '0.28');
+              sn.setAttribute('style', 'filter: grayscale(1); opacity: 0.5;');
             } else {
               sn.setAttribute('stroke-width', '3.5');
             }
@@ -264,7 +266,7 @@
             speak(itemNameById(tile.id));
             // Slot now filled — hide the silhouette so the coloured tile stands alone.
             const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
-            if (slotNode) slotNode.setAttribute('opacity', '0');
+            if (slotNode) slotNode.setAttribute('style', 'opacity: 0;');
             checkComplete();
           } else {
             animateTileTo(tile, node, { ...tile.homePos }, 360, { pop: false });
