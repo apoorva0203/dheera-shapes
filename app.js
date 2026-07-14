@@ -528,19 +528,29 @@
     }
   }
 
-  // Triple-tap the mute button within 800ms to toggle debug overlay. Won't
-  // fire on the first two taps — they still fall through to the mute toggle
-  // below (mute goes off, then on, ending in original state on tap #3).
+  // Triple-tap the mute button within 800ms to toggle the debug overlay.
+  // The mute button still toggles per click; on the 3rd click we restore
+  // the mute state to what it was BEFORE the triple-tap sequence started,
+  // so debug-mode-toggling doesn't leave the app muted or unmuted by accident.
   let clickTimestamps = [];
+  let preTripleMuteState = null;
   muteButton.addEventListener('click', () => {
+    const now = Date.now();
+    clickTimestamps = clickTimestamps.filter((t) => now - t < 800);
+    if (clickTimestamps.length === 0) preTripleMuteState = muted;
+    clickTimestamps.push(now);
+
     muted = !muted;
     saveMute();
     updateMuteUI();
-    const now = Date.now();
-    clickTimestamps = clickTimestamps.filter((t) => now - t < 800);
-    clickTimestamps.push(now);
+
     if (clickTimestamps.length >= 3) {
       clickTimestamps = [];
+      // Restore original mute state — the triple-tap is a debug toggle, not
+      // a mute toggle in disguise.
+      muted = preTripleMuteState;
+      saveMute();
+      updateMuteUI();
       try {
         const on = localStorage.getItem('shapes.debug') !== '1';
         localStorage.setItem('shapes.debug', on ? '1' : '0');
