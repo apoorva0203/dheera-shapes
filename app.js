@@ -141,17 +141,27 @@
     while (stage.firstChild) stage.removeChild(stage.firstChild);
 
     for (const slot of puzzle.slots) {
-      // Filled silhouette at low opacity — cleaner than dashed outlines for
-      // complex shapes / emojis. Reads as "faded target; drop matching colour
-      // version on top." Works uniformly for SVG shapes AND emoji glyphs
-      // (opacity cascades over emoji text too).
-      const g = svgEl('g', {
-        transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
-        'data-slot-index': String(slot.index),
-        fill: 'var(--slot-outline)',
-        opacity: '0.32',
-        'stroke-linejoin': 'round',
-      });
+      // Shapes get a clean outline (no fill). Emojis can't be outlined —
+      // emoji rendering ignores stroke — so they stay ghosted via opacity.
+      // Either way the reader sees a "faded target; drop matching colour
+      // version on top" affordance.
+      const kind = itemKind(slot.id);
+      const attrs = kind === 'emoji'
+        ? {
+            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
+            'data-slot-index': String(slot.index),
+            opacity: '0.28',
+          }
+        : {
+            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
+            'data-slot-index': String(slot.index),
+            fill: 'none',
+            stroke: 'var(--slot-outline)',
+            'stroke-width': '3.5',
+            'stroke-linejoin': 'round',
+            'stroke-linecap': 'round',
+          };
+      const g = svgEl('g', attrs);
       g.innerHTML = itemSvgById(slot.id);
       stage.appendChild(g);
     }
@@ -204,13 +214,17 @@
           tile.dragStageRect = stage.getBoundingClientRect();
           node.style.cursor = 'grabbing';
           stage.appendChild(node); // raise above peers
-          // Hint: bump matching slot opacity so it stands out from the other
-          // faded silhouettes. Non-matching slots stay dim.
+          // Hint: matching slot stands out. Emoji slots bump opacity;
+          // shape slots keep the outline but thicken the stroke.
           for (const slot of currentPuzzle.slots) {
             const slotNode = stage.querySelector(`[data-slot-index="${slot.index}"]`);
             if (!slotNode) continue;
             if (slot.id === tile.id && !slot.filled) {
-              slotNode.setAttribute('opacity', '0.6');
+              if (itemKind(slot.id) === 'emoji') {
+                slotNode.setAttribute('opacity', '0.6');
+              } else {
+                slotNode.setAttribute('stroke-width', '5.5');
+              }
             }
           }
         },
@@ -226,11 +240,19 @@
         end(event) {
           node.style.cursor = 'grab';
           tile.dragStageRect = null;
-          // Clear hints — restore slots to their resting opacity (or 1.0 if
-          // the slot has been filled by a landed tile).
+          // Clear hints — restore slots to their resting look. Filled slots
+          // stay hidden so the coloured tile owns the space.
           for (const s of currentPuzzle.slots) {
             const sn = stage.querySelector(`[data-slot-index="${s.index}"]`);
-            if (sn) sn.setAttribute('opacity', s.filled ? '0' : '0.32');
+            if (!sn) continue;
+            const kind = itemKind(s.id);
+            if (s.filled) {
+              sn.setAttribute('opacity', '0');
+            } else if (kind === 'emoji') {
+              sn.setAttribute('opacity', '0.28');
+            } else {
+              sn.setAttribute('stroke-width', '3.5');
+            }
           }
           if (tile.atSlotIndex != null) return;
 
