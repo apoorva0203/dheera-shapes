@@ -463,47 +463,73 @@
     osc.stop(now + 0.55);
   }
 
-  // ------- voice (pre-recorded audio files) -------
+  // ------- voice (Web Audio API + pre-recorded m4a) -------
   //
-  // Kid-account safe: uses HTMLAudioElement + m4a files instead of
-  // speechSynthesis (which iOS Screen Time can restrict). iOS Safari
-  // requires the first .play() to happen in a user-gesture callback; we
-  // unlock the engine with a base64 silent WAV (no network fetch, plays
-  // instantly) on the very first pointerdown/touchstart.
+  // We swapped from HTMLAudioElement to Web Audio API because iOS Safari's
+  // autoplay policy inside PWAs blocks HTMLAudioElement.play() when the
+  // caller isn't a "direct" user gesture — interact.js's `end` callback
+  // trips that check. Web Audio's rule is simpler: unlock the AudioContext
+  // inside any user gesture, then BufferSource.start() plays from anywhere
+  // including async callbacks. Files load once, decoded into AudioBuffers,
+  // then start() is cheap.
 
-  // Tiny silent WAV, ~68 bytes decoded. Plays reliably on any Safari.
-  const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-  const warmupPlayer = new Audio(SILENT_WAV);
-  const audioCache = new Map(); // slug → Audio instance, keeps files preloaded
+  let audioCtx = null;
+  const bufferCache = new Map(); // slug → AudioBuffer or Promise<AudioBuffer>
   let audioWarmed = false;
 
   function nameToSlug(name) {
     return String(name).toLowerCase().replace(/\s+/g, '-');
   }
 
-  function getAudioFor(slug) {
-    let audio = audioCache.get(slug);
-    if (!audio) {
-      audio = new Audio(`./audio/${slug}.m4a`);
-      audio.preload = 'auto';
-      audioCache.set(slug, audio);
-    }
-    return audio;
+  function ensureCtx() {
+    if (audioCtx) return audioCtx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+    return audioCtx;
+  }
+
+  async function loadBuffer(slug) {
+    if (bufferCache.has(slug)) return bufferCache.get(slug);
+    const ctx = ensureCtx();
+    if (!ctx) return null;
+    const promise = fetch(`./audio/${slug}.m4a`)
+      .then((r) => {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then((buf) => new Promise((resolve, reject) => {
+        // Safari still uses the callback form on some builds.
+        ctx.decodeAudioData(buf, resolve, reject);
+      }))
+      .then((audioBuffer) => {
+        bufferCache.set(slug, audioBuffer);
+        return audioBuffer;
+      })
+      .catch((err) => {
+        bufferCache.delete(slug);
+        debugToast('load err ' + slug + ': ' + (err?.name || err?.message || err));
+        return null;
+      });
+    bufferCache.set(slug, promise);
+    return promise;
   }
 
   function warmupAudio() {
     if (audioWarmed) return;
     try {
-      warmupPlayer.volume = 1.0;
-      warmupPlayer.currentTime = 0;
-      const p = warmupPlayer.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => { audioWarmed = true; debugToast('warmup ok'); })
-         .catch((err) => { debugToast('warmup err: ' + (err?.name || err?.message || err)); });
-      } else {
-        audioWarmed = true;
-        debugToast('warmup ok (no promise)');
-      }
+      const ctx = ensureCtx();
+      if (!ctx) { debugToast('no AudioContext'); return; }
+      // Play a 1-sample silent buffer to unlock — no network fetch needed.
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+      const resumeP = ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+      resumeP
+        .then(() => { audioWarmed = true; debugToast('warmup ok (' + ctx.state + ')'); })
+        .catch((err) => debugToast('resume err: ' + (err?.name || err?.message || err)));
     } catch (e) { debugToast('warmup throw ' + e); }
   }
 
@@ -528,29 +554,22 @@
     if (muted) { debugToast('muted → skip ' + text); return; }
     if (!text) return;
     const slug = nameToSlug(text);
-    try {
-      const audio = getAudioFor(slug);
-      audio.volume = 1.0;
-      audio.currentTime = 0;
-      const p = audio.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => debugToast('▶ ' + slug))
-         .catch((err) => {
-           debugToast('play err ' + slug + ': ' + (err?.name || err?.message || err));
-           try {
-             const fresh = new Audio(audio.src);
-             fresh.volume = 1.0;
-             fresh.play()
-               .then(() => debugToast('▶ (retry) ' + slug))
-               .catch((e) => debugToast('retry err ' + slug + ': ' + (e?.name || e?.message || e)));
-           } catch (e) { debugToast('retry throw ' + slug + ': ' + e); }
-         });
-      } else {
-        debugToast('▶ (no promise) ' + slug);
+    const ctx = ensureCtx();
+    if (!ctx) { debugToast('no AudioContext'); return; }
+
+    Promise.resolve(loadBuffer(slug)).then((buffer) => {
+      if (!buffer) return; // load error was already toasted
+      if (ctx.state === 'suspended') ctx.resume();
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        debugToast('▶ ' + slug);
+      } catch (e) {
+        debugToast('start err ' + slug + ': ' + (e?.name || e?.message || e));
       }
-    } catch (e) {
-      debugToast('speak throw ' + slug + ': ' + e);
-    }
+    });
   }
 
   const warmupEvents = ['pointerdown', 'touchstart', 'click', 'keydown'];
