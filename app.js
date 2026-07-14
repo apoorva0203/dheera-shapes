@@ -48,9 +48,25 @@
 
   // ------- item lookup -------
 
+  function itemById(itemId) {
+    return SHAPES.find((s) => s.id === itemId) ?? null;
+  }
+
   function itemSvgById(itemId) {
-    const shape = SHAPES.find((s) => s.id === itemId);
-    return shape ? shape.svg : '';
+    const item = itemById(itemId);
+    if (!item) return '';
+    if (item.kind === 'emoji') {
+      // Emoji rendered via SVG <text>. font-size 76 puts the glyph roughly in
+      // the [-45..45] box on iOS Safari's default emoji font. Adjust if the
+      // system font changes.
+      return `<text x="0" y="0" font-size="76" text-anchor="middle" dominant-baseline="central">${item.emoji}</text>`;
+    }
+    return item.svg;
+  }
+
+  function itemKind(itemId) {
+    const item = itemById(itemId);
+    return item?.kind ?? 'shape';
   }
 
   function itemNameById(itemId) {
@@ -125,13 +141,15 @@
     while (stage.firstChild) stage.removeChild(stage.firstChild);
 
     for (const slot of puzzle.slots) {
+      // Filled silhouette at low opacity — cleaner than dashed outlines for
+      // complex shapes / emojis. Reads as "faded target; drop matching colour
+      // version on top." Works uniformly for SVG shapes AND emoji glyphs
+      // (opacity cascades over emoji text too).
       const g = svgEl('g', {
         transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
         'data-slot-index': String(slot.index),
-        fill: 'var(--slot-fill)',
-        stroke: 'var(--slot-outline)',
-        'stroke-width': '3.5',
-        'stroke-dasharray': '6 5',
+        fill: 'var(--slot-outline)',
+        opacity: '0.32',
         'stroke-linejoin': 'round',
       });
       g.innerHTML = itemSvgById(slot.id);
@@ -186,12 +204,13 @@
           tile.dragStageRect = stage.getBoundingClientRect();
           node.style.cursor = 'grabbing';
           stage.appendChild(node); // raise above peers
-          // Hint: tint matching unfilled slots so the destination stands out.
+          // Hint: bump matching slot opacity so it stands out from the other
+          // faded silhouettes. Non-matching slots stay dim.
           for (const slot of currentPuzzle.slots) {
             const slotNode = stage.querySelector(`[data-slot-index="${slot.index}"]`);
             if (!slotNode) continue;
             if (slot.id === tile.id && !slot.filled) {
-              slotNode.setAttribute('fill', 'var(--hint)');
+              slotNode.setAttribute('opacity', '0.6');
             }
           }
         },
@@ -207,10 +226,11 @@
         end(event) {
           node.style.cursor = 'grab';
           tile.dragStageRect = null;
-          // Clear hints.
+          // Clear hints — restore slots to their resting opacity (or 1.0 if
+          // the slot has been filled by a landed tile).
           for (const s of currentPuzzle.slots) {
             const sn = stage.querySelector(`[data-slot-index="${s.index}"]`);
-            if (sn) sn.setAttribute('fill', 'var(--slot-fill)');
+            if (sn) sn.setAttribute('opacity', s.filled ? '0' : '0.32');
           }
           if (tile.atSlotIndex != null) return;
 
@@ -220,8 +240,9 @@
             hit.filled = true;
             animateTileTo(tile, node, { x: hit.pos.x, y: hit.pos.y }, 260, { pop: true });
             speak(itemNameById(tile.id));
+            // Slot now filled — hide the silhouette so the coloured tile stands alone.
             const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
-            if (slotNode) slotNode.setAttribute('stroke-dasharray', '0');
+            if (slotNode) slotNode.setAttribute('opacity', '0');
             checkComplete();
           } else {
             animateTileTo(tile, node, { ...tile.homePos }, 360, { pop: false });
