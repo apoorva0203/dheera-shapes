@@ -13,17 +13,23 @@
   let trayY = 1050;
   let tileSize = 180;
 
-  // Level increments after each solved puzzle. Puzzle count grows to 8 then
-  // plateaus — endless variation via the shape library. Persisted so the
-  // child picks up where they left off.
+  // MODE: MATCH. Single target ("void") with N decoys; correct tile fills the
+  // void, wrong tile snaps back. Difficulty progresses in 4 tiers of 3 levels
+  // each (see tierForLevel). Level plateaus at MAX_LEVEL, first solve at
+  // MAX_LEVEL triggers a trophy and unlocks the milestone snapshot.
   const START_LEVEL = 1;
-  const MAX_SHAPE_COUNT = 8;
+  const MAX_LEVEL = 12;
+  const NUDGE_THRESHOLD = 3;
   let level = START_LEVEL;
+  let trophyUnlocked = false;
 
   let currentPuzzle = null;
   let isTransitioning = false;
   let muted = false;
   let audioCtx = null;
+
+  const levelChip = document.getElementById('level-chip');
+  const levelChipLabel = document.getElementById('level-chip-label');
 
   // ------- utilities -------
 
@@ -74,9 +80,54 @@
     return shape ? shape.name : '';
   }
 
-  function shapeCountForLevel(lvl) {
-    // 3 shapes at levels 1-2, +1 every 2 levels, capped at MAX_SHAPE_COUNT.
-    return Math.min(3 + Math.floor((lvl - 1) / 2), MAX_SHAPE_COUNT);
+  // Difficulty tiers. Silhouette in the void is always visible; difficulty
+  // comes from how many decoys and how similar they are to the target.
+  function tierForLevel(lvl) {
+    if (lvl <= 3) return { decoyCount: 2, decoyKind: 'random' };
+    if (lvl <= 6) return { decoyCount: 3, decoyKind: 'random' };
+    if (lvl <= 9) return { decoyCount: 4, decoyKind: 'category' };
+    return { decoyCount: 5, decoyKind: 'confusables' };
+  }
+
+  // Pick decoys of the requested flavour, falling back to broader pools if the
+  // narrower pool doesn't have enough items. Never returns the target itself.
+  function pickDecoys(target, count, kind) {
+    const pool = SHAPES.filter((s) => s.id !== target.id);
+    const sameCategory = pool.filter((s) => s.category === target.category);
+
+    if (kind === 'random') {
+      return pickN(pool.map((s) => s.id), count);
+    }
+
+    if (kind === 'category') {
+      if (sameCategory.length >= count) {
+        return pickN(sameCategory.map((s) => s.id), count);
+      }
+      const chosen = shuffle(sameCategory.map((s) => s.id));
+      const remaining = pool.filter((s) => !chosen.includes(s.id));
+      return chosen.concat(pickN(remaining.map((s) => s.id), count - chosen.length));
+    }
+
+    // confusables → same category → random
+    const confusables = (CONFUSABLES.get(target.id) ?? []).filter((id) => id !== target.id);
+    const chosen = shuffle(confusables).slice(0, count);
+    if (chosen.length >= count) return chosen;
+
+    const chosenSet = new Set(chosen);
+    const catExtras = shuffle(sameCategory.map((s) => s.id).filter((id) => !chosenSet.has(id)));
+    for (const id of catExtras) {
+      if (chosen.length >= count) break;
+      chosen.push(id);
+      chosenSet.add(id);
+    }
+    if (chosen.length >= count) return chosen;
+
+    const randExtras = shuffle(pool.map((s) => s.id).filter((id) => !chosenSet.has(id)));
+    for (const id of randExtras) {
+      if (chosen.length >= count) break;
+      chosen.push(id);
+    }
+    return chosen;
   }
 
   // ------- layout -------
@@ -88,17 +139,16 @@
     viewH = Math.round(VIEW_W * ratio);
     stage.setAttribute('viewBox', `0 0 ${VIEW_W} ${viewH}`);
 
-    slotY = Math.round(viewH * 0.26);
-    trayY = Math.round(viewH * 0.80);
+    // Match mode: one big void centered ~30% down, tray grid centered ~72%.
+    slotY = Math.round(viewH * 0.30);
+    trayY = Math.round(viewH * 0.72);
 
-    // Tiles size to whichever axis is tighter, using the larger of slot vs
-    // tile count (letters phase has more tiles than slots because of decoys).
-    const columns = currentPuzzle
-      ? Math.max(currentPuzzle.slots.length, currentPuzzle.tiles.length)
-      : 3;
+    const tileCount = currentPuzzle ? currentPuzzle.tiles.length : 3;
+    const trayRows = tileCount <= 4 ? 1 : 2;
+    const columns = Math.ceil(tileCount / trayRows);
     const perColumnWidth = VIEW_W / (columns + 1);
-    const verticalGap = trayY - slotY;
-    tileSize = Math.floor(Math.min(perColumnWidth * 0.42, verticalGap * 0.22, 180));
+    const verticalGap = viewH - slotY - Math.round(viewH * 0.10);
+    tileSize = Math.floor(Math.min(perColumnWidth * 0.42, verticalGap * 0.18, 180));
 
     if (currentPuzzle) layoutPuzzle(currentPuzzle);
   }
@@ -111,23 +161,45 @@
     }));
   }
 
+  // Grid layout for the tray: single row if ≤4 tiles, otherwise two rows split
+  // as evenly as possible. Rows are stacked vertically around the given center y.
+  function gridPositions(count, centerY) {
+    if (count <= 4) return rowPositions(count, centerY);
+    const topCount = Math.ceil(count / 2);
+    const bottomCount = count - topCount;
+    const rowGap = Math.round(tileSize * 2.4);
+    const topY = centerY - Math.round(rowGap / 2);
+    const bottomY = centerY + Math.round(rowGap / 2);
+    return [
+      ...rowPositions(topCount, topY),
+      ...rowPositions(bottomCount, bottomY),
+    ];
+  }
+
   // ------- puzzle generation -------
 
-  function generatePuzzle() {
-    const count = shapeCountForLevel(level);
-    const chosenIds = pickN(SHAPES.map((s) => s.id), count);
-    const trayIds = shuffle(chosenIds);
-    const trayColors = pickN(COLORS, chosenIds.length);
+  function generateMatchPuzzle() {
+    const tier = tierForLevel(level);
+    const target = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const decoyIds = pickDecoys(target, tier.decoyCount, tier.decoyKind);
+    const trayIds = shuffle([target.id, ...decoyIds]);
+    const trayColors = pickN(COLORS, trayIds.length);
+    const statsCtx = window.Stats
+      ? window.Stats.recordPuzzleStart({ level, targetId: target.id, tier: tier.decoyKind })
+      : null;
     return {
-      slots: chosenIds.map((id, i) => ({ id, index: i, filled: false })),
+      slots: [{ id: target.id, index: 0, filled: false }],
       tiles: trayIds.map((id, i) => ({ id, color: trayColors[i], atSlotIndex: null })),
+      wrongDropCount: 0,
+      nudged: false,
+      statsCtx,
     };
   }
 
   function layoutPuzzle(puzzle) {
-    const slotPts = rowPositions(puzzle.slots.length, slotY);
-    const trayPts = rowPositions(puzzle.tiles.length, trayY);
-    puzzle.slots.forEach((s, i) => { s.pos = slotPts[i]; });
+    // Match mode: one central slot, tiles laid out in a grid below.
+    puzzle.slots[0].pos = { x: Math.round(VIEW_W / 2), y: slotY };
+    const trayPts = gridPositions(puzzle.tiles.length, trayY);
     puzzle.tiles.forEach((t, i) => {
       t.homePos = trayPts[i];
       t.pos = t.atSlotIndex == null ? { ...t.homePos } : { ...puzzle.slots[t.atSlotIndex].pos };
@@ -140,20 +212,20 @@
   function renderPuzzle(puzzle) {
     while (stage.firstChild) stage.removeChild(stage.firstChild);
 
+    // The single "void" is rendered larger than tray tiles so it reads as the
+    // target destination, not another moveable piece.
+    const slotScale = (tileSize * 2.3) / 45;
+
     for (const slot of puzzle.slots) {
-      // Shapes get a clean outline (no fill). Emojis can't be outlined —
-      // emoji rendering ignores stroke — so they stay ghosted via opacity.
-      // Either way the reader sees a "faded target; drop matching colour
-      // version on top" affordance.
       const kind = itemKind(slot.id);
       const attrs = kind === 'emoji'
         ? {
-            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
+            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
             'data-slot-index': String(slot.index),
             style: 'filter: grayscale(1); opacity: 0.5;',
           }
         : {
-            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${tileSize / 45})`,
+            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
             'data-slot-index': String(slot.index),
             fill: 'none',
             stroke: 'var(--slot-outline)',
@@ -264,12 +336,23 @@
             hit.filled = true;
             animateTileTo(tile, node, { x: hit.pos.x, y: hit.pos.y }, 260, { pop: true });
             speak(itemNameById(tile.id));
-            // Slot now filled — hide the silhouette so the coloured tile stands alone.
             const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
             if (slotNode) slotNode.setAttribute('style', 'opacity: 0;');
             checkComplete();
           } else {
             animateTileTo(tile, node, { ...tile.homePos }, 360, { pop: false });
+            // Wrong drop (either on the void with a mismatched tile, or nowhere).
+            // Only count as "wrong" if the child actually aimed at the void.
+            if (hit && hit.id !== tile.id) {
+              playBoop();
+              currentPuzzle.wrongDropCount += 1;
+              if (window.Stats) window.Stats.recordWrongDrop(currentPuzzle.statsCtx, tile.id);
+              if (currentPuzzle.wrongDropCount >= NUDGE_THRESHOLD && !currentPuzzle.nudged) {
+                currentPuzzle.nudged = true;
+                if (window.Stats) window.Stats.recordNudge(currentPuzzle.statsCtx);
+                bounceCorrectTile();
+              }
+            }
           }
         },
       },
@@ -314,6 +397,26 @@
     return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
   }
 
+  // Scaffold after 3 consecutive wrong drops: the correct tile does a small
+  // bounce so a stuck child can find it without frustration.
+  function bounceCorrectTile() {
+    if (!currentPuzzle) return;
+    const target = currentPuzzle.slots[0];
+    const correct = currentPuzzle.tiles.find((t) => t.id === target.id && t.atSlotIndex == null);
+    if (!correct || !correct.node) return;
+    const baseTransform = correct.node.getAttribute('transform');
+    correct.node.animate(
+      [
+        { transform: baseTransform },
+        { transform: baseTransform + ' scale(1.18)' },
+        { transform: baseTransform + ' scale(0.95)' },
+        { transform: baseTransform + ' scale(1.10)' },
+        { transform: baseTransform },
+      ],
+      { duration: 900, easing: 'ease-in-out', iterations: 2 },
+    );
+  }
+
   function findHitSlot(pos) {
     let best = null;
     let bestDist = Infinity;
@@ -321,7 +424,7 @@
       const dx = slot.pos.x - pos.x;
       const dy = slot.pos.y - pos.y;
       const d = Math.hypot(dx, dy);
-      if (d < tileSize * 0.9 && d < bestDist) {
+      if (d < tileSize * 1.7 && d < bestDist) {
         best = slot;
         bestDist = d;
       }
@@ -340,6 +443,8 @@
     if (!currentPuzzle.slots.every((s) => s.filled)) return;
     isTransitioning = true;
 
+    if (window.Stats) window.Stats.recordCorrect(currentPuzzle.statsCtx);
+
     for (const tile of currentPuzzle.tiles) {
       if (!tile.node || tile.atSlotIndex == null) continue;
       tile.node.animate(
@@ -352,16 +457,29 @@
       );
     }
 
-    launchConfetti();
-    setTimeout(() => speak('well done'), 500);
-    setTimeout(() => nextPuzzle(), 3200);
+    const isFirstCompletion = level >= MAX_LEVEL && !trophyUnlocked;
+    if (isFirstCompletion) {
+      launchConfetti('big');
+      playCompletionChime();
+      trophyUnlocked = true;
+      saveTrophy();
+      updateLevelChip();
+      if (window.Stats) window.Stats.recordFirstCompletion();
+      showSaveMilestoneButton();
+      setTimeout(() => speak('well done'), 500);
+      setTimeout(() => nextPuzzle(), 6000);
+    } else {
+      launchConfetti();
+      setTimeout(() => speak('well done'), 500);
+      setTimeout(() => nextPuzzle(), 3200);
+    }
   }
 
   // Simple confetti — colourful squares + circles rain from the top of the
   // stage with real gravity + rotation. rAF-driven; container is torn down
   // once every piece falls off the bottom.
-  function launchConfetti() {
-    const pieces = 60;
+  function launchConfetti(intensity = 'normal') {
+    const pieces = intensity === 'big' ? 140 : 60;
     const container = svgEl('g');
     container.setAttribute('pointer-events', 'none');
     stage.appendChild(container);
@@ -410,12 +528,15 @@
   }
 
   function nextPuzzle() {
-    level += 1;
-    saveLevel();
+    if (level < MAX_LEVEL) {
+      level += 1;
+      saveLevel();
+      updateLevelChip();
+    }
     stage.style.transition = 'opacity 300ms ease';
     stage.style.opacity = '0';
     setTimeout(() => {
-      currentPuzzle = generatePuzzle();
+      currentPuzzle = generateMatchPuzzle();
       resizeStage();
       stage.style.opacity = '1';
       isTransitioning = false;
@@ -426,12 +547,77 @@
     try {
       const raw = localStorage.getItem('shapes.level');
       const parsed = raw ? parseInt(raw, 10) : START_LEVEL;
-      if (Number.isFinite(parsed) && parsed >= START_LEVEL) level = parsed;
+      if (Number.isFinite(parsed) && parsed >= START_LEVEL) {
+        level = Math.min(parsed, MAX_LEVEL);
+      }
     } catch { /* ignore */ }
   }
 
   function saveLevel() {
     try { localStorage.setItem('shapes.level', String(level)); } catch { /* ignore */ }
+  }
+
+  function loadTrophy() {
+    try { trophyUnlocked = localStorage.getItem('shapes.trophy') === '1'; } catch { trophyUnlocked = false; }
+  }
+
+  function saveTrophy() {
+    try {
+      localStorage.setItem('shapes.trophy', trophyUnlocked ? '1' : '0');
+      if (trophyUnlocked && !localStorage.getItem('shapes.first_complete_ts')) {
+        localStorage.setItem('shapes.first_complete_ts', String(Date.now()));
+      }
+    } catch { /* ignore */ }
+  }
+
+  function updateLevelChip() {
+    if (!levelChip || !levelChipLabel) return;
+    if (trophyUnlocked) {
+      levelChip.classList.add('trophy');
+      levelChipLabel.textContent = '🏆';
+    } else {
+      levelChip.classList.remove('trophy');
+      levelChipLabel.textContent = 'L' + level;
+    }
+  }
+
+  // Transient button during the level-12 first-solve celebration. Tapping it
+  // freezes the current stats as a self-contained HTML file and downloads it.
+  // Auto-hides when the next puzzle transitions in.
+  function showSaveMilestoneButton() {
+    let btn = document.getElementById('milestone-save-btn');
+    if (btn) return;
+    btn = document.createElement('button');
+    btn.id = 'milestone-save-btn';
+    btn.textContent = '💾 Save milestone';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      if (!window.Stats) { btn.remove(); return; }
+      const saved = await window.Stats.saveMilestone({
+        id: 'match-mode-complete',
+        version: 1,
+        label: 'Match Mode Complete',
+      });
+      if (saved) {
+        const day = new Date(saved.ts).toISOString().slice(0, 10);
+        const blob = new Blob([saved.html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `dheera-match-mode-${day}.html`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      btn.remove();
+    });
+    document.body.appendChild(btn);
+    setTimeout(() => {
+      const still = document.getElementById('milestone-save-btn');
+      if (still) still.remove();
+    }, 6000);
   }
 
   // ------- sound -------
@@ -461,6 +647,50 @@
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.55);
+  }
+
+  // Soft "not that one" tone — low, warm, brief. Never punitive.
+  function playBoop() {
+    if (muted) return;
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + 0.18);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+
+  // Warmer, cascading chime for level-12 first completion.
+  function playCompletionChime() {
+    if (muted) return;
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    const now = ctx.currentTime;
+    // C5, E5, G5, C6 arpeggio
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, i) => {
+      const start = now + i * 0.13;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.14, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.95);
+    });
   }
 
   // ------- voice (Web Audio API + pre-recorded m4a) -------
@@ -636,12 +866,40 @@
     }
   });
 
+  // ------- level chip long-press → stats page -------
+
+  const LONG_PRESS_MS = 2000;
+  let levelChipPressTimer = null;
+
+  function cancelLevelChipPress() {
+    levelChip?.classList.remove('pressing');
+    if (levelChipPressTimer) {
+      clearTimeout(levelChipPressTimer);
+      levelChipPressTimer = null;
+    }
+  }
+
+  if (levelChip) {
+    levelChip.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      levelChip.classList.add('pressing');
+      levelChipPressTimer = setTimeout(() => {
+        window.location.href = './stats.html';
+      }, LONG_PRESS_MS);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((evt) => {
+      levelChip.addEventListener(evt, cancelLevelChipPress);
+    });
+  }
+
   // ------- boot -------
 
   loadMute();
   loadLevel();
+  loadTrophy();
+  updateLevelChip();
   resizeStage();
-  currentPuzzle = generatePuzzle();
+  currentPuzzle = generateMatchPuzzle();
   resizeStage();
   layoutPuzzle(currentPuzzle);
 
@@ -649,5 +907,5 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v18 muted=' + muted), 100);
+  setTimeout(() => debugToast('boot v20 match L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
 })();
