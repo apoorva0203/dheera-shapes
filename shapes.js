@@ -78,6 +78,46 @@ const SHAPES = [
   { id: 'e-butterfly',   name: 'butterfly',    kind: 'emoji', category: 'animal',    emoji: '🦋' },
   { id: 'e-fish',        name: 'fish',         kind: 'emoji', category: 'animal',    emoji: '🐠' },
   { id: 'e-whale',       name: 'whale',        kind: 'emoji', category: 'animal',    emoji: '🐳' },
+
+  // Letters A-Z (uppercase). Rendered as SVG <text>. `char` is what's drawn.
+  { id: 'l-a', name: 'a', kind: 'text', category: 'letter', char: 'A' },
+  { id: 'l-b', name: 'b', kind: 'text', category: 'letter', char: 'B' },
+  { id: 'l-c', name: 'c', kind: 'text', category: 'letter', char: 'C' },
+  { id: 'l-d', name: 'd', kind: 'text', category: 'letter', char: 'D' },
+  { id: 'l-e', name: 'e', kind: 'text', category: 'letter', char: 'E' },
+  { id: 'l-f', name: 'f', kind: 'text', category: 'letter', char: 'F' },
+  { id: 'l-g', name: 'g', kind: 'text', category: 'letter', char: 'G' },
+  { id: 'l-h', name: 'h', kind: 'text', category: 'letter', char: 'H' },
+  { id: 'l-i', name: 'i', kind: 'text', category: 'letter', char: 'I' },
+  { id: 'l-j', name: 'j', kind: 'text', category: 'letter', char: 'J' },
+  { id: 'l-k', name: 'k', kind: 'text', category: 'letter', char: 'K' },
+  { id: 'l-l', name: 'l', kind: 'text', category: 'letter', char: 'L' },
+  { id: 'l-m', name: 'm', kind: 'text', category: 'letter', char: 'M' },
+  { id: 'l-n', name: 'n', kind: 'text', category: 'letter', char: 'N' },
+  { id: 'l-o', name: 'o', kind: 'text', category: 'letter', char: 'O' },
+  { id: 'l-p', name: 'p', kind: 'text', category: 'letter', char: 'P' },
+  { id: 'l-q', name: 'q', kind: 'text', category: 'letter', char: 'Q' },
+  { id: 'l-r', name: 'r', kind: 'text', category: 'letter', char: 'R' },
+  { id: 'l-s', name: 's', kind: 'text', category: 'letter', char: 'S' },
+  { id: 'l-t', name: 't', kind: 'text', category: 'letter', char: 'T' },
+  { id: 'l-u', name: 'u', kind: 'text', category: 'letter', char: 'U' },
+  { id: 'l-v', name: 'v', kind: 'text', category: 'letter', char: 'V' },
+  { id: 'l-w', name: 'w', kind: 'text', category: 'letter', char: 'W' },
+  { id: 'l-x', name: 'x', kind: 'text', category: 'letter', char: 'X' },
+  { id: 'l-y', name: 'y', kind: 'text', category: 'letter', char: 'Y' },
+  { id: 'l-z', name: 'z', kind: 'text', category: 'letter', char: 'Z' },
+
+  // Numbers 1-10.
+  { id: 'n-1',  name: '1',  kind: 'text', category: 'number', char: '1' },
+  { id: 'n-2',  name: '2',  kind: 'text', category: 'number', char: '2' },
+  { id: 'n-3',  name: '3',  kind: 'text', category: 'number', char: '3' },
+  { id: 'n-4',  name: '4',  kind: 'text', category: 'number', char: '4' },
+  { id: 'n-5',  name: '5',  kind: 'text', category: 'number', char: '5' },
+  { id: 'n-6',  name: '6',  kind: 'text', category: 'number', char: '6' },
+  { id: 'n-7',  name: '7',  kind: 'text', category: 'number', char: '7' },
+  { id: 'n-8',  name: '8',  kind: 'text', category: 'number', char: '8' },
+  { id: 'n-9',  name: '9',  kind: 'text', category: 'number', char: '9' },
+  { id: 'n-10', name: '10', kind: 'text', category: 'number', char: '10' },
 ];
 
 // Bidirectional; every listed pair mirrors both ways at lookup time.
@@ -113,6 +153,43 @@ const CONFUSABLE_PAIRS = [
   ['e-cow', 'e-pig'],
   ['e-cow', 'e-horse'],
   ['e-tiger', 'e-lion'],
+
+  // Letter confusables (uppercase).
+  ['l-e', 'l-f'],
+  ['l-o', 'l-q'],
+  ['l-c', 'l-g'],
+  ['l-p', 'l-r'],
+  ['l-b', 'l-p'],
+  ['l-b', 'l-d'],
+  ['l-b', 'l-r'],
+  ['l-d', 'l-p'],
+  ['l-m', 'l-n'],
+  ['l-m', 'l-w'],
+  ['l-n', 'l-h'],
+  ['l-u', 'l-v'],
+  ['l-i', 'l-l'],
+  ['l-i', 'l-t'],
+  ['l-k', 'l-x'],
+  ['l-a', 'l-v'],
+  ['l-c', 'l-o'],
+  ['l-n', 'l-z'],
+  ['l-y', 'l-v'],
+
+  // Number confusables.
+  ['n-6', 'n-9'],
+  ['n-3', 'n-8'],
+  ['n-1', 'n-7'],
+  ['n-5', 'n-6'],
+  ['n-2', 'n-5'],
+  ['n-4', 'n-9'],
+
+  // Cross letter/number confusables (visually similar glyphs).
+  ['l-o', 'n-10'],   // O and 1-0 both round-ish, only weak — keeps them apart in tiers
+  ['l-i', 'n-1'],
+  ['l-z', 'n-2'],
+  ['l-s', 'n-5'],
+  ['l-g', 'n-6'],
+  ['l-b', 'n-8'],
 ];
 
 const CONFUSABLES = (() => {
@@ -127,6 +204,11 @@ const CONFUSABLES = (() => {
   }
   return map;
 })();
+
+// Items in active use by the current game phase. Shapes + emoji stay in
+// SHAPES above (data + assets preserved for future modes) but are excluded
+// from what the match-mode game picks.
+const ACTIVE_ITEMS = SHAPES.filter((s) => s.kind === 'text');
 
 const COLORS = [
   '#6BB6FF', '#7BC47F', '#FFA07A', '#F5B5C0', '#B39DDB',

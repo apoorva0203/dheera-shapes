@@ -67,6 +67,10 @@
       // File is named by the item's `name` (see /emoji/<name>.svg).
       return `<image href="./emoji/${item.name}.svg" x="-45" y="-45" width="90" height="90" preserveAspectRatio="xMidYMid meet" />`;
     }
+    if (item.kind === 'text') {
+      const fontSize = String(item.char).length > 1 ? 55 : 78;
+      return `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="Nunito, -apple-system, BlinkMacSystemFont, system-ui, sans-serif" font-weight="800">${item.char}</text>`;
+    }
     return item.svg;
   }
 
@@ -92,7 +96,7 @@
   // Pick decoys of the requested flavour, falling back to broader pools if the
   // narrower pool doesn't have enough items. Never returns the target itself.
   function pickDecoys(target, count, kind) {
-    const pool = SHAPES.filter((s) => s.id !== target.id);
+    const pool = ACTIVE_ITEMS.filter((s) => s.id !== target.id);
     const sameCategory = pool.filter((s) => s.category === target.category);
 
     if (kind === 'random') {
@@ -180,7 +184,7 @@
 
   function generateMatchPuzzle() {
     const tier = tierForLevel(level);
-    const target = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const target = ACTIVE_ITEMS[Math.floor(Math.random() * ACTIVE_ITEMS.length)];
     const decoyIds = pickDecoys(target, tier.decoyCount, tier.decoyKind);
     const trayIds = shuffle([target.id, ...decoyIds]);
     const trayColors = pickN(COLORS, trayIds.length);
@@ -218,21 +222,32 @@
 
     for (const slot of puzzle.slots) {
       const kind = itemKind(slot.id);
-      const attrs = kind === 'emoji'
-        ? {
-            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
-            'data-slot-index': String(slot.index),
-            style: 'filter: grayscale(1); opacity: 0.5;',
-          }
-        : {
-            transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
-            'data-slot-index': String(slot.index),
-            fill: 'none',
-            stroke: 'var(--slot-outline)',
-            'stroke-width': '3.5',
-            'stroke-linejoin': 'round',
-            'stroke-linecap': 'round',
-          };
+      let attrs;
+      if (kind === 'emoji') {
+        attrs = {
+          transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
+          'data-slot-index': String(slot.index),
+          style: 'filter: grayscale(1); opacity: 0.5;',
+        };
+      } else if (kind === 'text') {
+        // Ghosted letter/number — outlined text renders poorly on most fonts,
+        // so we use muted fill + reduced opacity instead.
+        attrs = {
+          transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
+          'data-slot-index': String(slot.index),
+          style: 'fill: var(--slot-outline); opacity: 0.55;',
+        };
+      } else {
+        attrs = {
+          transform: `translate(${slot.pos.x}, ${slot.pos.y}) scale(${slotScale})`,
+          'data-slot-index': String(slot.index),
+          fill: 'none',
+          stroke: 'var(--slot-outline)',
+          'stroke-width': '3.5',
+          'stroke-linejoin': 'round',
+          'stroke-linecap': 'round',
+        };
+      }
       const g = svgEl('g', attrs);
       g.innerHTML = itemSvgById(slot.id);
       stage.appendChild(g);
@@ -286,16 +301,17 @@
           tile.dragStageRect = stage.getBoundingClientRect();
           node.style.cursor = 'grabbing';
           stage.appendChild(node); // raise above peers
-          // Hint: matching slot stands out. Emoji slots bump opacity;
-          // shape slots keep the outline but thicken the stroke.
+          // Hint: matching slot stands out. Ghosted slots (emoji, text) bump
+          // opacity; outlined shape slots thicken the stroke instead.
           for (const slot of currentPuzzle.slots) {
             const slotNode = stage.querySelector(`[data-slot-index="${slot.index}"]`);
             if (!slotNode) continue;
             if (slot.id === tile.id && !slot.filled) {
-              if (itemKind(slot.id) === 'emoji') {
-                // Drop grayscale and boost opacity — the matching emoji
-                // "lights up" in colour while other slots stay dim + gray.
+              const kind = itemKind(slot.id);
+              if (kind === 'emoji') {
                 slotNode.setAttribute('style', 'filter: none; opacity: 0.85;');
+              } else if (kind === 'text') {
+                slotNode.setAttribute('style', 'fill: var(--slot-outline); opacity: 0.95;');
               } else {
                 slotNode.setAttribute('stroke-width', '5.5');
               }
@@ -324,6 +340,8 @@
               sn.setAttribute('style', 'opacity: 0;');
             } else if (kind === 'emoji') {
               sn.setAttribute('style', 'filter: grayscale(1); opacity: 0.5;');
+            } else if (kind === 'text') {
+              sn.setAttribute('style', 'fill: var(--slot-outline); opacity: 0.55;');
             } else {
               sn.setAttribute('stroke-width', '3.5');
             }
@@ -541,6 +559,19 @@
       stage.style.opacity = '1';
       isTransitioning = false;
     }, 320);
+  }
+
+  // One-time reset when the active item pool changes fundamentally (e.g.
+  // shapes+emoji → letters+numbers). Trophy state is deliberately preserved
+  // so the earlier milestone stays in the archive.
+  function migratePoolIfNeeded() {
+    try {
+      const v = localStorage.getItem('shapes.pool_version');
+      if (v !== '2') {
+        localStorage.setItem('shapes.pool_version', '2');
+        localStorage.setItem('shapes.level', String(START_LEVEL));
+      }
+    } catch { /* ignore */ }
   }
 
   function loadLevel() {
@@ -895,6 +926,7 @@
   // ------- boot -------
 
   loadMute();
+  migratePoolIfNeeded();
   loadLevel();
   loadTrophy();
   updateLevelChip();
@@ -907,5 +939,5 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v20 match L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
+  setTimeout(() => debugToast('boot v23 letters+numbers L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
 })();
