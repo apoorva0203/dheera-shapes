@@ -22,6 +22,8 @@
   const NUDGE_THRESHOLD = 3;
   let level = START_LEVEL;
   let trophyUnlocked = false;
+  let covered = new Set();
+  let runEnded = false;
 
   let currentPuzzle = null;
   let isTransitioning = false;
@@ -475,6 +477,13 @@
       );
     }
 
+    for (const s of currentPuzzle.slots) covered.add(s.id);
+    saveCovered();
+    if (covered.size >= ACTIVE_ITEMS.length && currentPuzzle.wrongDropCount === 0) {
+      endRun();
+      return;
+    }
+
     const isFirstCompletion = level >= MAX_LEVEL && !trophyUnlocked;
     if (isFirstCompletion) {
       launchConfetti('big');
@@ -599,6 +608,53 @@
         localStorage.setItem('shapes.first_complete_ts', String(Date.now()));
       }
     } catch { /* ignore */ }
+  }
+
+  function loadCovered() {
+    try {
+      const raw = localStorage.getItem('shapes.covered');
+      covered = new Set(raw ? JSON.parse(raw) : []);
+      runEnded = localStorage.getItem('shapes.run_ended') === '1';
+    } catch { covered = new Set(); runEnded = false; }
+  }
+
+  function saveCovered() {
+    try { localStorage.setItem('shapes.covered', JSON.stringify([...covered])); } catch { /* ignore */ }
+  }
+
+  // All 36 covered + final solve clean → freeze on a giant trophy.
+  function endRun() {
+    runEnded = true;
+    try { localStorage.setItem('shapes.run_ended', '1'); } catch { /* ignore */ }
+    playCompletionChime();
+    showFinishedOverlay();
+  }
+
+  function showFinishedOverlay() {
+    if (document.getElementById('finish-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'finish-overlay';
+    const trophy = document.createElement('div');
+    trophy.id = 'finish-trophy';
+    trophy.textContent = '🏆';
+    const again = document.createElement('button');
+    again.id = 'finish-again';
+    again.textContent = 'Play again';
+    again.addEventListener('click', resetRun);
+    overlay.appendChild(trophy);
+    overlay.appendChild(again);
+    document.body.appendChild(overlay);
+  }
+
+  function resetRun() {
+    covered = new Set();
+    saveCovered();
+    runEnded = false;
+    try { localStorage.removeItem('shapes.run_ended'); } catch { /* ignore */ }
+    const overlay = document.getElementById('finish-overlay');
+    if (overlay) overlay.remove();
+    isTransitioning = false;
+    nextPuzzle();
   }
 
   function updateLevelChip() {
@@ -929,15 +985,17 @@
   migratePoolIfNeeded();
   loadLevel();
   loadTrophy();
+  loadCovered();
   updateLevelChip();
   resizeStage();
   currentPuzzle = generateMatchPuzzle();
   resizeStage();
   layoutPuzzle(currentPuzzle);
+  if (runEnded) showFinishedOverlay();
 
   window.addEventListener('resize', resizeStage);
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v24 letters+numbers L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
+  setTimeout(() => debugToast('boot v25 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
 })();

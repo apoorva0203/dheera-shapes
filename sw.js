@@ -1,7 +1,7 @@
 // Cache every static file on install so the app is fully offline after the
 // first load. Bump CACHE_VERSION whenever any of these files change so the
 // old cache is discarded on the next visit.
-const CACHE_VERSION = 'shapes-v24';
+const CACHE_VERSION = 'shapes-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -117,6 +117,42 @@ const ASSETS = [
   "./audio/watermelon.m4a",
   "./audio/well-done.m4a",
   "./audio/whale.m4a",
+  "./audio/a.m4a",
+  "./audio/b.m4a",
+  "./audio/c.m4a",
+  "./audio/d.m4a",
+  "./audio/e.m4a",
+  "./audio/f.m4a",
+  "./audio/g.m4a",
+  "./audio/h.m4a",
+  "./audio/i.m4a",
+  "./audio/j.m4a",
+  "./audio/k.m4a",
+  "./audio/l.m4a",
+  "./audio/m.m4a",
+  "./audio/n.m4a",
+  "./audio/o.m4a",
+  "./audio/p.m4a",
+  "./audio/q.m4a",
+  "./audio/r.m4a",
+  "./audio/s.m4a",
+  "./audio/t.m4a",
+  "./audio/u.m4a",
+  "./audio/v.m4a",
+  "./audio/w.m4a",
+  "./audio/x.m4a",
+  "./audio/y.m4a",
+  "./audio/z.m4a",
+  "./audio/1.m4a",
+  "./audio/2.m4a",
+  "./audio/3.m4a",
+  "./audio/4.m4a",
+  "./audio/5.m4a",
+  "./audio/6.m4a",
+  "./audio/7.m4a",
+  "./audio/8.m4a",
+  "./audio/9.m4a",
+  "./audio/10.m4a",
 ];
 
 self.addEventListener('install', (event) => {
