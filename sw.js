@@ -1,7 +1,7 @@
 // Cache every static file on install so the app is fully offline after the
 // first load. Bump CACHE_VERSION whenever any of these files change so the
 // old cache is discarded on the next visit.
-const CACHE_VERSION = 'shapes-v25';
+const CACHE_VERSION = 'shapes-v26';
 const ASSETS = [
   './',
   './index.html',
@@ -182,8 +182,10 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== location.origin) return;
   event.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((resp) => {
-      const copy = resp.clone();
-      caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));
+      if (resp.ok) {
+        const copy = resp.clone();
+        caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));
+      }
       return resp;
     })),
   );

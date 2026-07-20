@@ -997,5 +997,5 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v25 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
+  setTimeout(() => debugToast('boot v26 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
 })();
