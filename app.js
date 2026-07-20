@@ -881,16 +881,21 @@
 
     Promise.resolve(loadBuffer(slug)).then((buffer) => {
       if (!buffer) return; // load error was already toasted
-      if (ctx.state === 'suspended') ctx.resume();
-      try {
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(0);
-        debugToast('▶ ' + slug);
-      } catch (e) {
-        debugToast('start err ' + slug + ': ' + (e?.name || e?.message || e));
-      }
+      const play = () => {
+        try {
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(ctx.destination);
+          source.start(0);
+          debugToast('▶ ' + slug + ' (' + ctx.state + ')');
+        } catch (e) {
+          debugToast('start err ' + slug + ': ' + (e?.name || e?.message || e));
+        }
+      };
+      // iOS: start() into a suspended/interrupted ctx plays silently. Wait
+      // for resume to land before starting the source.
+      if (ctx.state === 'running') play();
+      else ctx.resume().then(play).catch(play);
     });
   }
 
@@ -997,5 +1002,5 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v26 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
+  setTimeout(() => debugToast('boot v27 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
 })();
