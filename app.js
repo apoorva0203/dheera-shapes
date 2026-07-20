@@ -484,11 +484,11 @@
       updateLevelChip();
       if (window.Stats) window.Stats.recordFirstCompletion();
       showSaveMilestoneButton();
-      setTimeout(() => speak('well done'), 500);
+      // setTimeout(() => speak('well done'), 500); // paused: collides with letter/number sound
       setTimeout(() => nextPuzzle(), 6000);
     } else {
       launchConfetti();
-      setTimeout(() => speak('well done'), 500);
+      // setTimeout(() => speak('well done'), 500); // paused: collides with letter/number sound
       setTimeout(() => nextPuzzle(), 3200);
     }
   }
@@ -939,5 +939,5 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v23 letters+numbers L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
+  setTimeout(() => debugToast('boot v24 letters+numbers L' + level + (trophyUnlocked ? ' 🏆' : '')), 100);
 })();
