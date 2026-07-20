@@ -18,11 +18,17 @@
   const START_LEVEL = 1;
   const MAX_LEVEL = 12;
   const NUDGE_THRESHOLD = 3;
-  // Board mode: all letters A-Z (rows of 7) then numbers 1-10 (rows of 5) as
-  // ordered outline slots up top, all 36 tiles jumbled in a bank below.
-  const BOARD_LETTER_COLS = 7;
-  const BOARD_NUM_COLS = 5;
-  const BOARD_BANK_COLS = 9;
+  // Paged board: ordered slots + jumbled tiles, PAGE_SIZE at a time. Finish a
+  // page → the next slides in. Keeps tiles big vs showing all 36 at once.
+  const PAGE_SIZE = 6;
+  const PAGE_SLOT_COLS = 6;
+  const PAGE_BANK_COLS = 6;
+  let runPages = [];
+  let runTotal = 0;
+  let pageIndex = 0;
+  let runStartTs = 0;
+  let runWrongByItem = {};
+  let runFilled = 0;
   let level = START_LEVEL;
   let trophyUnlocked = false;
   let covered = new Set();
@@ -174,62 +180,92 @@
 
   // ------- puzzle generation -------
 
-  function generateBoardPuzzle() {
-    const letters = ACTIVE_ITEMS.filter((i) => i.category === 'letter');
-    const numbers = ACTIVE_ITEMS.filter((i) => i.category === 'number');
-    const ordered = [...letters, ...numbers];
-    const slots = ordered.map((item, index) => ({ id: item.id, index, filled: false }));
-    const bankIds = shuffle(ordered.map((i) => i.id));
+  // Pages chunk letters and numbers separately so numbers always start a fresh
+  // page: A-F, G-L, M-R, S-X, Y-Z, 1-6, 7-10.
+  function buildRunPages() {
+    const letters = ACTIVE_ITEMS.filter((i) => i.category === 'letter').map((i) => i.id);
+    const numbers = ACTIVE_ITEMS.filter((i) => i.category === 'number').map((i) => i.id);
+    const pages = [];
+    for (const group of [letters, numbers]) {
+      for (let i = 0; i < group.length; i += PAGE_SIZE) pages.push(group.slice(i, i + PAGE_SIZE));
+    }
+    return pages;
+  }
+
+  function pageCount() {
+    return runPages.length;
+  }
+
+  function startRun() {
+    runPages = buildRunPages();
+    runTotal = runPages.reduce((sum, p) => sum + p.length, 0);
+    pageIndex = 0;
+    runStartTs = Date.now();
+    runWrongByItem = {};
+    runFilled = 0;
+    buildPage(false);
+  }
+
+  function makePagePuzzle() {
+    const pageIds = runPages[pageIndex] || [];
+    const slots = pageIds.map((id, index) => ({ id, index, filled: false }));
     const statsCtx = window.Stats
-      ? window.Stats.recordPuzzleStart({ level: 1, targetId: 'board', tier: 'board' })
+      ? window.Stats.recordPuzzleStart({ level: pageIndex + 1, targetId: 'page', tier: 'board' })
       : null;
     return {
       slots,
-      tiles: bankIds.map((id, i) => ({ id, color: COLORS[i % COLORS.length], atSlotIndex: null })),
-      letterCount: letters.length,
-      numberCount: numbers.length,
+      tiles: shuffle(pageIds).map((id, i) => ({ id, color: COLORS[i % COLORS.length], atSlotIndex: null })),
       wrongDropCount: 0,
+      wrongByItem: {},
       nudged: false,
       statsCtx,
     };
   }
 
+  function buildPage(fade = true) {
+    const render = () => {
+      currentPuzzle = makePagePuzzle();
+      resizeStage();
+      updateLevelChip();
+      stage.style.opacity = '1';
+      isTransitioning = false;
+    };
+    if (!fade) { render(); return; }
+    stage.style.transition = 'opacity 300ms ease';
+    stage.style.opacity = '0';
+    setTimeout(render, 320);
+  }
+
   function layoutPuzzle(puzzle) {
-    const topPad = Math.round(viewH * 0.07);
-    const slotBottom = Math.round(viewH * 0.55);
-    const bankTop = Math.round(viewH * 0.60);
-    const bankBottom = viewH - Math.round(viewH * 0.04);
+    const topPad = Math.round(viewH * 0.11);
+    const slotBottom = Math.round(viewH * 0.46);
+    const bankTop = Math.round(viewH * 0.56);
+    const bankBottom = viewH - Math.round(viewH * 0.06);
 
-    const letterRows = Math.ceil(puzzle.letterCount / BOARD_LETTER_COLS);
-    const numberRows = Math.ceil(puzzle.numberCount / BOARD_NUM_COLS);
-    const rowH = (slotBottom - topPad) / (letterRows + numberRows);
-    const letterColW = VIEW_W / (BOARD_LETTER_COLS + 1);
-    const numberColW = VIEW_W / (BOARD_NUM_COLS + 1);
-
+    const n = puzzle.slots.length;
+    const slotCols = Math.min(PAGE_SLOT_COLS, n);
+    const slotRows = Math.ceil(n / slotCols);
+    const slotColW = VIEW_W / (slotCols + 1);
+    const slotRowH = (slotBottom - topPad) / slotRows;
     puzzle.slots.forEach((slot, i) => {
-      if (i < puzzle.letterCount) {
-        const r = Math.floor(i / BOARD_LETTER_COLS);
-        const c = i % BOARD_LETTER_COLS;
-        slot.pos = { x: Math.round(letterColW * (c + 1)), y: Math.round(topPad + rowH * (r + 0.5)) };
-      } else {
-        const j = i - puzzle.letterCount;
-        const r = Math.floor(j / BOARD_NUM_COLS);
-        const c = j % BOARD_NUM_COLS;
-        slot.pos = { x: Math.round(numberColW * (c + 1)), y: Math.round(topPad + rowH * (letterRows + r + 0.5)) };
-      }
+      const r = Math.floor(i / slotCols);
+      const c = i % slotCols;
+      slot.pos = { x: Math.round(slotColW * (c + 1)), y: Math.round(topPad + slotRowH * (r + 0.5)) };
     });
 
-    const bankRows = Math.ceil(puzzle.tiles.length / BOARD_BANK_COLS);
+    const m = puzzle.tiles.length;
+    const bankCols = Math.min(PAGE_BANK_COLS, m);
+    const bankRows = Math.ceil(m / bankCols);
+    const bankColW = VIEW_W / (bankCols + 1);
     const bankRowH = (bankBottom - bankTop) / bankRows;
-    const bankColW = VIEW_W / (BOARD_BANK_COLS + 1);
     puzzle.tiles.forEach((t, i) => {
-      const r = Math.floor(i / BOARD_BANK_COLS);
-      const c = i % BOARD_BANK_COLS;
+      const r = Math.floor(i / bankCols);
+      const c = i % bankCols;
       t.homePos = { x: Math.round(bankColW * (c + 1)), y: Math.round(bankTop + bankRowH * (r + 0.5)) };
       t.pos = t.atSlotIndex == null ? { ...t.homePos } : { ...puzzle.slots[t.atSlotIndex].pos };
     });
 
-    tileSize = Math.floor(Math.min(letterColW, bankColW, rowH, bankRowH) * 0.42);
+    tileSize = Math.min(Math.floor(Math.min(slotColW, bankColW, slotRowH, bankRowH) * 0.5), 120);
     renderPuzzle(puzzle);
   }
 
@@ -287,14 +323,28 @@
         'pointer-events': 'all',
       });
       g.appendChild(hit);
-      const shape = svgEl('g', {
-        fill: tile.color,
-        stroke: 'rgba(0,0,0,0.05)',
-        'stroke-width': '1',
-        'pointer-events': 'none',
-      });
-      shape.innerHTML = itemSvgById(tile.id);
-      g.appendChild(shape);
+      if (itemKind(tile.id) === 'text') {
+        // Solid rounded "key" so a jumble of letters reads as distinct,
+        // pickable tiles rather than loose coloured glyphs.
+        const card = svgEl('rect', {
+          x: '-42', y: '-42', width: '84', height: '84', rx: '18', ry: '18',
+          fill: tile.color, stroke: 'rgba(0,0,0,0.10)', 'stroke-width': '1.5',
+          'pointer-events': 'none',
+        });
+        g.appendChild(card);
+        const label = svgEl('g', { fill: '#fff', 'pointer-events': 'none' });
+        label.innerHTML = itemSvgById(tile.id);
+        g.appendChild(label);
+      } else {
+        const shape = svgEl('g', {
+          fill: tile.color,
+          stroke: 'rgba(0,0,0,0.05)',
+          'stroke-width': '1',
+          'pointer-events': 'none',
+        });
+        shape.innerHTML = itemSvgById(tile.id);
+        g.appendChild(shape);
+      }
       tile.node = g;
       tile.hitNode = hit;
       stage.appendChild(g);
@@ -368,29 +418,31 @@
           }
           if (tile.atSlotIndex != null) return;
 
-          const hit = findHitSlot(tile.pos);
-          if (hit && hit.id === tile.id && !hit.filled) {
-            tile.atSlotIndex = hit.index;
-            hit.filled = true;
-            animateTileTo(tile, node, { x: hit.pos.x, y: hit.pos.y }, 260, { pop: true });
+          // Match against the tile's OWN slot with a generous radius. Checking
+          // only the correct slot (not the nearest) means a filled neighbour can
+          // never block a drop — critical for the last piece in a dense grid.
+          const target = currentPuzzle.slots.find((s) => s.id === tile.id);
+          const dTarget = target
+            ? Math.hypot(target.pos.x - tile.pos.x, target.pos.y - tile.pos.y)
+            : Infinity;
+          if (target && !target.filled && dTarget < tileSize * 2.0) {
+            tile.atSlotIndex = target.index;
+            target.filled = true;
+            animateTileTo(tile, node, { x: target.pos.x, y: target.pos.y }, 260, { pop: true });
             speak(itemNameById(tile.id));
-            const slotNode = stage.querySelector(`[data-slot-index="${hit.index}"]`);
+            const slotNode = stage.querySelector(`[data-slot-index="${target.index}"]`);
             if (slotNode) slotNode.setAttribute('style', 'opacity: 0;');
             updateLevelChip();
             checkComplete();
           } else {
             animateTileTo(tile, node, { ...tile.homePos }, 360, { pop: false });
-            // Wrong drop (either on the void with a mismatched tile, or nowhere).
-            // Only count as "wrong" if the child actually aimed at the void.
-            if (hit && hit.id !== tile.id) {
+            // Aimed at a slot but the wrong one → gentle boop + record the fumble.
+            const near = findHitSlot(tile.pos);
+            if (near && near.id !== tile.id) {
               playBoop();
               currentPuzzle.wrongDropCount += 1;
+              currentPuzzle.wrongByItem[tile.id] = (currentPuzzle.wrongByItem[tile.id] || 0) + 1;
               if (window.Stats) window.Stats.recordWrongDrop(currentPuzzle.statsCtx, tile.id);
-              if (currentPuzzle.wrongDropCount >= NUDGE_THRESHOLD && !currentPuzzle.nudged) {
-                currentPuzzle.nudged = true;
-                if (window.Stats) window.Stats.recordNudge(currentPuzzle.statsCtx);
-                bounceCorrectTile();
-              }
             }
           }
         },
@@ -476,7 +528,7 @@
     node.setAttribute('transform', `translate(${tile.pos.x}, ${tile.pos.y}) scale(${s})`);
   }
 
-  // ------- completion + next puzzle -------
+  // ------- page complete → next page / finish -------
 
   function checkComplete() {
     if (!currentPuzzle.slots.every((s) => s.filled)) return;
@@ -496,10 +548,21 @@
       );
     }
 
+    for (const [id, c] of Object.entries(currentPuzzle.wrongByItem)) {
+      runWrongByItem[id] = (runWrongByItem[id] || 0) + c;
+    }
+    runFilled += currentPuzzle.slots.length;
     for (const s of currentPuzzle.slots) covered.add(s.id);
     saveCovered();
-    launchConfetti('big');
-    endRun();
+    updateLevelChip();
+
+    if (pageIndex + 1 >= pageCount()) {
+      launchConfetti('big');
+      endRun();
+    } else {
+      launchConfetti();
+      setTimeout(() => { pageIndex += 1; buildPage(true); }, 1200);
+    }
   }
 
   // Simple confetti — colourful squares + circles rain from the top of the
@@ -557,13 +620,7 @@
   function newBoard() {
     stage.style.transition = 'opacity 300ms ease';
     stage.style.opacity = '0';
-    setTimeout(() => {
-      currentPuzzle = generateBoardPuzzle();
-      resizeStage();
-      updateLevelChip();
-      stage.style.opacity = '1';
-      isTransitioning = false;
-    }, 320);
+    setTimeout(startRun, 320);
   }
 
   // One-time reset when the active item pool changes fundamentally (e.g.
@@ -618,14 +675,21 @@
     try { localStorage.setItem('shapes.covered', JSON.stringify([...covered])); } catch { /* ignore */ }
   }
 
-  // Whole board filled → freeze on a giant trophy + stamp the completion date.
+  // All pages done → freeze on a giant trophy, stamp completion + run stats
+  // (used by the shareable certificate).
   function endRun() {
     runEnded = true;
+    const now = Date.now();
     try {
       localStorage.setItem('shapes.run_ended', '1');
       if (!localStorage.getItem('shapes.completed_at')) {
-        localStorage.setItem('shapes.completed_at', String(Date.now()));
+        localStorage.setItem('shapes.completed_at', String(now));
       }
+      localStorage.setItem('shapes.last_result', JSON.stringify({
+        completedAt: now,
+        boardMs: runStartTs ? now - runStartTs : 0,
+        wrong: runWrongByItem,
+      }));
     } catch { /* ignore */ }
     if (window.Stats) window.Stats.recordFirstCompletion();
     playCompletionChime();
@@ -676,9 +740,9 @@
       levelChipLabel.textContent = '🏆';
     } else {
       levelChip.classList.remove('trophy');
-      const filled = currentPuzzle ? currentPuzzle.slots.filter((s) => s.filled).length : 0;
-      const total = currentPuzzle ? currentPuzzle.slots.length : ACTIVE_ITEMS.length;
-      levelChipLabel.textContent = filled + '/' + total;
+      const pageFilled = currentPuzzle ? currentPuzzle.slots.filter((s) => s.filled).length : 0;
+      const total = runTotal || ACTIVE_ITEMS.length;
+      levelChipLabel.textContent = (runFilled + pageFilled) + '/' + total;
     }
   }
 
@@ -1026,10 +1090,7 @@
   loadCovered();
   updateLevelChip();
   resizeStage();
-  currentPuzzle = generateBoardPuzzle();
-  resizeStage();
-  layoutPuzzle(currentPuzzle);
-  updateLevelChip();
+  startRun();
   if (runEnded) showFinishedOverlay();
 
   window.addEventListener('resize', resizeStage);
@@ -1037,7 +1098,7 @@
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
   setTimeout(() => {
-    const line = 'boot v29 board ' + (currentPuzzle ? currentPuzzle.slots.length : 0) + ' slots' + (runEnded ? ' 🏆' : '');
+    const line = 'boot v30 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
     debugToast(line);
     audioStatus(line);
   }, 100);
