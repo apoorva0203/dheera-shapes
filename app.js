@@ -825,6 +825,7 @@
       .catch((err) => {
         bufferCache.delete(slug);
         debugToast('load err ' + slug + ': ' + (err?.name || err?.message || err));
+        audioStatus('load err ' + slug + ': ' + (err?.name || err?.message || err));
         return null;
       });
     bufferCache.set(slug, promise);
@@ -872,6 +873,22 @@
     setTimeout(() => div.remove(), 3000);
   }
 
+  // Always-on audio status line (not gated by DEBUG_AUDIO) — persists so the
+  // last audio event is readable at any time while we diagnose sound.
+  let audioStatusEl = null;
+  function audioStatus(msg) {
+    if (!audioStatusEl) {
+      audioStatusEl = document.createElement('div');
+      audioStatusEl.id = 'audio-status';
+      audioStatusEl.style.cssText =
+        'position: fixed; bottom: 8px; left: 8px; background: rgba(0,0,0,0.8); ' +
+        'color: #fff; padding: 4px 8px; border-radius: 6px; font: 12px monospace; ' +
+        'z-index: 9999; max-width: 70vw; word-break: break-word; pointer-events: none;';
+      document.body.appendChild(audioStatusEl);
+    }
+    audioStatusEl.textContent = msg;
+  }
+
   function speak(text) {
     if (muted) { debugToast('muted → skip ' + text); return; }
     if (!text) return;
@@ -888,8 +905,10 @@
           source.connect(ctx.destination);
           source.start(0);
           debugToast('▶ ' + slug + ' (' + ctx.state + ')');
+          audioStatus('▶ ' + slug + ' (' + ctx.state + ')');
         } catch (e) {
           debugToast('start err ' + slug + ': ' + (e?.name || e?.message || e));
+          audioStatus('start err ' + slug + ' (' + ctx.state + ')');
         }
       };
       // iOS: start() into a suspended/interrupted ctx plays silently. Wait
@@ -1002,5 +1021,9 @@
   window.addEventListener('orientationchange', resizeStage);
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
-  setTimeout(() => debugToast('boot v27 letters+numbers L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '')), 100);
+  setTimeout(() => {
+    const line = 'boot v28 L' + level + ' ' + covered.size + '/' + ACTIVE_ITEMS.length + (runEnded ? ' 🏆' : '');
+    debugToast(line);
+    audioStatus(line);
+  }, 100);
 })();
