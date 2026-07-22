@@ -79,6 +79,14 @@ const SHAPES = [
   { id: 'e-fish',        name: 'fish',         kind: 'emoji', category: 'animal',    emoji: '🐠' },
   { id: 'e-whale',       name: 'whale',        kind: 'emoji', category: 'animal',    emoji: '🐳' },
 
+  // Family — real photos in /photos/<photo>.jpg. `name` drives the spoken voice.
+  { id: 'fam-mumma',  name: 'mumma',  kind: 'photo', category: 'family', photo: 'mumma'  },
+  { id: 'fam-daddy',  name: 'daddy',  kind: 'photo', category: 'family', photo: 'daddy'  },
+  { id: 'fam-butter', name: 'butter', kind: 'photo', category: 'family', photo: 'butter' },
+  { id: 'fam-dheera', name: 'dheera', kind: 'photo', category: 'family', photo: 'dheera' },
+  { id: 'fam-nini',   name: 'nini',   kind: 'photo', category: 'family', photo: 'nini'   },
+  { id: 'fam-nana',   name: 'nana',   kind: 'photo', category: 'family', photo: 'nana'   },
+
   // Letters A-Z (uppercase). Rendered as SVG <text>. `char` is what's drawn.
   { id: 'l-a', name: 'a', kind: 'text', category: 'letter', char: 'A' },
   { id: 'l-b', name: 'b', kind: 'text', category: 'letter', char: 'B' },
@@ -209,6 +217,30 @@ const CONFUSABLES = (() => {
 // SHAPES above (data + assets preserved for future modes) but are excluded
 // from what the match-mode game picks.
 const ACTIVE_ITEMS = SHAPES.filter((s) => s.kind === 'text');
+
+// Spell-the-word stream: each word shows its emoji as the picture cue and the
+// child drags letter tiles into the slots. Every word here has a matching
+// emoji/<name>.svg and audio/<name>.m4a already. Kept short for a toddler.
+const WORDS = [
+  { word: 'CAT',   emoji: 'e-cat' },
+  { word: 'DOG',   emoji: 'e-dog' },
+  { word: 'COW',   emoji: 'e-cow' },
+  { word: 'PIG',   emoji: 'e-pig' },
+  { word: 'FOX',   emoji: 'e-fox' },
+  { word: 'OWL',   emoji: 'e-owl' },
+  { word: 'FROG',  emoji: 'e-frog' },
+  { word: 'FISH',  emoji: 'e-fish' },
+  { word: 'BEAR',  emoji: 'e-bear' },
+  { word: 'LION',  emoji: 'e-lion' },
+  { word: 'PEAR',  emoji: 'e-pear' },
+  { word: 'CORN',  emoji: 'e-corn' },
+  { word: 'APPLE', emoji: 'e-apple' },
+  { word: 'TIGER', emoji: 'e-tiger' },
+  { word: 'PANDA', emoji: 'e-panda' },
+];
+
+// Family photos, shown as single-photo drop puzzles between words.
+const FAMILY = SHAPES.filter((s) => s.kind === 'photo');
 
 const COLORS = [
   '#6BB6FF', '#7BC47F', '#FFA07A', '#F5B5C0', '#B39DDB',

@@ -1,7 +1,7 @@
 // Cache every static file on install so the app is fully offline after the
 // first load. Bump CACHE_VERSION whenever any of these files change so the
 // old cache is discarded on the next visit.
-const CACHE_VERSION = 'shapes-v30';
+const CACHE_VERSION = 'shapes-v31';
 const ASSETS = [
   './',
   './index.html',
@@ -154,6 +154,18 @@ const ASSETS = [
   "./audio/8.m4a",
   "./audio/9.m4a",
   "./audio/10.m4a",
+  "./photos/mumma.jpg",
+  "./photos/daddy.jpg",
+  "./photos/butter.jpg",
+  "./photos/dheera.jpg",
+  "./photos/nini.jpg",
+  "./photos/nana.jpg",
+  "./audio/mumma.m4a",
+  "./audio/daddy.m4a",
+  "./audio/butter.m4a",
+  "./audio/dheera.m4a",
+  "./audio/nini.m4a",
+  "./audio/nana.m4a",
 ];
 
 self.addEventListener('install', (event) => {

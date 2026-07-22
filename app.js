@@ -78,6 +78,11 @@
       // File is named by the item's `name` (see /emoji/<name>.svg).
       return `<image href="./emoji/${item.name}.svg" x="-45" y="-45" width="90" height="90" preserveAspectRatio="xMidYMid meet" />`;
     }
+    if (item.kind === 'photo') {
+      // Family photo (square jpg) clipped into a rounded square.
+      return `<clipPath id="pc-${item.photo}"><rect x="-42" y="-42" width="84" height="84" rx="16" /></clipPath>` +
+        `<image href="./photos/${item.photo}.jpg" x="-42" y="-42" width="84" height="84" preserveAspectRatio="xMidYMid slice" clip-path="url(#pc-${item.photo})" />`;
+    }
     if (item.kind === 'text') {
       const fontSize = String(item.char).length > 1 ? 55 : 78;
       return `<text x="0" y="0" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="Nunito, -apple-system, BlinkMacSystemFont, system-ui, sans-serif" font-weight="800">${item.char}</text>`;
@@ -180,15 +185,30 @@
 
   // ------- puzzle generation -------
 
-  // Pages chunk letters and numbers separately so numbers always start a fresh
-  // page: A-F, G-L, M-R, S-X, Y-Z, 1-6, 7-10.
+  // A stream of one-puzzle pages: spell-a-word (emoji cue + letter slots) with a
+  // family photo dropped in roughly every 3 words. Each page is
+  //   { type, ids: [slotItemId...], cue: emojiId|null, audio: nameToSpeak }.
   function buildRunPages() {
-    const letters = ACTIVE_ITEMS.filter((i) => i.category === 'letter').map((i) => i.id);
-    const numbers = ACTIVE_ITEMS.filter((i) => i.category === 'number').map((i) => i.id);
+    const wordPages = shuffle(WORDS).map((entry) => ({
+      type: 'word',
+      ids: entry.word.toLowerCase().split('').map((ch) => `l-${ch}`),
+      cue: entry.emoji,
+      audio: itemNameById(entry.emoji),
+    }));
+    const familyPages = shuffle(FAMILY).map((item) => ({
+      type: 'family',
+      ids: [item.id],
+      cue: null,
+      audio: item.name,
+    }));
+
     const pages = [];
-    for (const group of [letters, numbers]) {
-      for (let i = 0; i < group.length; i += PAGE_SIZE) pages.push(group.slice(i, i + PAGE_SIZE));
-    }
+    let familyIndex = 0;
+    wordPages.forEach((page, i) => {
+      pages.push(page);
+      if ((i + 1) % 3 === 0 && familyIndex < familyPages.length) pages.push(familyPages[familyIndex++]);
+    });
+    while (familyIndex < familyPages.length) pages.push(familyPages[familyIndex++]);
     return pages;
   }
 
@@ -198,7 +218,7 @@
 
   function startRun() {
     runPages = buildRunPages();
-    runTotal = runPages.reduce((sum, p) => sum + p.length, 0);
+    runTotal = runPages.reduce((sum, p) => sum + p.ids.length, 0);
     pageIndex = 0;
     runStartTs = Date.now();
     runWrongByItem = {};
@@ -207,12 +227,16 @@
   }
 
   function makePagePuzzle() {
-    const pageIds = runPages[pageIndex] || [];
+    const page = runPages[pageIndex] || { type: 'word', ids: [], cue: null, audio: '' };
+    const pageIds = page.ids;
     const slots = pageIds.map((id, index) => ({ id, index, filled: false }));
     const statsCtx = window.Stats
       ? window.Stats.recordPuzzleStart({ level: pageIndex + 1, targetId: 'page', tier: 'board' })
       : null;
     return {
+      type: page.type,
+      cue: page.cue,
+      audio: page.audio,
       slots,
       tiles: shuffle(pageIds).map((id, i) => ({ id, color: COLORS[i % COLORS.length], atSlotIndex: null })),
       wrongDropCount: 0,
@@ -237,7 +261,8 @@
   }
 
   function layoutPuzzle(puzzle) {
-    const topPad = Math.round(viewH * 0.11);
+    // Word puzzles reserve the top band for the emoji picture cue.
+    const topPad = Math.round(viewH * (puzzle.cue ? 0.30 : 0.11));
     const slotBottom = Math.round(viewH * 0.46);
     const bankTop = Math.round(viewH * 0.56);
     const bankBottom = viewH - Math.round(viewH * 0.06);
@@ -276,6 +301,17 @@
 
     const slotScale = tileSize / 45;
 
+    // Word puzzles: big emoji picture at the top so the child knows what to spell.
+    if (puzzle.cue) {
+      const cueScale = slotScale * 2.4;
+      const cue = svgEl('g', {
+        transform: `translate(500, ${Math.round(viewH * 0.15)}) scale(${cueScale})`,
+        'pointer-events': 'none',
+      });
+      cue.innerHTML = itemSvgById(puzzle.cue);
+      stage.appendChild(cue);
+    }
+
     for (const slot of puzzle.slots) {
       const kind = itemKind(slot.id);
       let attrs;
@@ -305,7 +341,11 @@
         };
       }
       const g = svgEl('g', attrs);
-      g.innerHTML = itemSvgById(slot.id);
+      // Photo slots are an empty rounded square target (drop the photo here),
+      // not a faded copy of the photo.
+      g.innerHTML = kind === 'photo'
+        ? '<rect x="-42" y="-42" width="84" height="84" rx="16" fill="none" />'
+        : itemSvgById(slot.id);
       stage.appendChild(g);
     }
 
@@ -335,6 +375,17 @@
         const label = svgEl('g', { fill: '#fff', 'pointer-events': 'none' });
         label.innerHTML = itemSvgById(tile.id);
         g.appendChild(label);
+      } else if (itemKind(tile.id) === 'photo') {
+        // White card behind the rounded photo so it reads as a pickable tile.
+        const card = svgEl('rect', {
+          x: '-46', y: '-46', width: '92', height: '92', rx: '20', ry: '20',
+          fill: '#fff', stroke: 'rgba(0,0,0,0.10)', 'stroke-width': '1.5',
+          'pointer-events': 'none',
+        });
+        g.appendChild(card);
+        const photo = svgEl('g', { 'pointer-events': 'none' });
+        photo.innerHTML = itemSvgById(tile.id);
+        g.appendChild(photo);
       } else {
         const shape = svgEl('g', {
           fill: tile.color,
@@ -421,11 +472,16 @@
           // Match against the tile's OWN slot with a generous radius. Checking
           // only the correct slot (not the nearest) means a filled neighbour can
           // never block a drop — critical for the last piece in a dense grid.
-          const target = currentPuzzle.slots.find((s) => s.id === tile.id);
-          const dTarget = target
-            ? Math.hypot(target.pos.x - tile.pos.x, target.pos.y - tile.pos.y)
-            : Infinity;
-          if (target && !target.filled && dTarget < tileSize * 2.0) {
+          // Nearest UNFILLED slot with the tile's id. Nearest-not-first is what
+          // lets a repeated letter (e.g. the two P's in APPLE) fill either slot.
+          let target = null;
+          let dTarget = Infinity;
+          for (const s of currentPuzzle.slots) {
+            if (s.id !== tile.id || s.filled) continue;
+            const d = Math.hypot(s.pos.x - tile.pos.x, s.pos.y - tile.pos.y);
+            if (d < dTarget) { dTarget = d; target = s; }
+          }
+          if (target && dTarget < tileSize * 2.0) {
             tile.atSlotIndex = target.index;
             target.filled = true;
             animateTileTo(tile, node, { x: target.pos.x, y: target.pos.y }, 260, { pop: true });
@@ -534,6 +590,12 @@
     if (!currentPuzzle.slots.every((s) => s.filled)) return;
     isTransitioning = true;
 
+    // Word puzzles: say the whole word once spelled (letters already spoke as
+    // they landed). Family puzzles already said the name on the drop.
+    if (currentPuzzle.type === 'word' && currentPuzzle.audio) {
+      setTimeout(() => speak(currentPuzzle.audio), 400);
+    }
+
     if (window.Stats) window.Stats.recordCorrect(currentPuzzle.statsCtx);
 
     for (const tile of currentPuzzle.tiles) {
@@ -629,9 +691,14 @@
   function migratePoolIfNeeded() {
     try {
       const v = localStorage.getItem('shapes.pool_version');
-      if (v !== '2') {
-        localStorage.setItem('shapes.pool_version', '2');
+      if (v !== '3') {
+        localStorage.setItem('shapes.pool_version', '3');
         localStorage.setItem('shapes.level', String(START_LEVEL));
+        // Content changed to the words+family stream — clear the old run so it
+        // starts fresh instead of showing the previous finished screen.
+        localStorage.removeItem('shapes.run_ended');
+        localStorage.removeItem('shapes.covered');
+        localStorage.removeItem('shapes.completed_at');
       }
     } catch { /* ignore */ }
   }
@@ -706,7 +773,7 @@
     trophy.textContent = '🏆';
     const sub = document.createElement('div');
     sub.id = 'finish-sub';
-    sub.textContent = 'A–Z and 1–10 complete!';
+    sub.textContent = 'All the words and family done! 🎉';
     const cert = document.createElement('a');
     cert.id = 'finish-cert';
     cert.href = './showcase.html';
@@ -1098,7 +1165,7 @@
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
   setTimeout(() => {
-    const line = 'boot v30 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
+    const line = 'boot v31 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
     debugToast(line);
     audioStatus(line);
   }, 100);
