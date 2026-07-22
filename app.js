@@ -189,10 +189,12 @@
   // family photo dropped in roughly every 3 words. Each page is
   //   { type, ids: [slotItemId...], cue: emojiId|null, audio: nameToSpeak }.
   function buildRunPages() {
+    // The emoji is a piece too: it leads the row (ghost picture) and the child
+    // drops the emoji + letters. No per-letter sound — the word is said at the end.
     const wordPages = shuffle(WORDS).map((entry) => ({
       type: 'word',
-      ids: entry.word.toLowerCase().split('').map((ch) => `l-${ch}`),
-      cue: entry.emoji,
+      ids: [entry.emoji, ...entry.word.toLowerCase().split('').map((ch) => `l-${ch}`)],
+      cue: null,
       audio: itemNameById(entry.emoji),
     }));
     const familyPages = shuffle(FAMILY).map((item) => ({
@@ -485,7 +487,9 @@
             tile.atSlotIndex = target.index;
             target.filled = true;
             animateTileTo(tile, node, { x: target.pos.x, y: target.pos.y }, 260, { pop: true });
-            speak(itemNameById(tile.id));
+            // Family says the name on the drop; word puzzles stay silent per-piece
+            // and say the whole word on completion.
+            if (currentPuzzle.type === 'family') speak(itemNameById(tile.id));
             const slotNode = stage.querySelector(`[data-slot-index="${target.index}"]`);
             if (slotNode) slotNode.setAttribute('style', 'opacity: 0;');
             updateLevelChip();
@@ -1165,7 +1169,7 @@
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
   setTimeout(() => {
-    const line = 'boot v31 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
+    const line = 'boot v32 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
     debugToast(line);
     audioStatus(line);
   }, 100);
