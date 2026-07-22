@@ -487,9 +487,9 @@
             tile.atSlotIndex = target.index;
             target.filled = true;
             animateTileTo(tile, node, { x: target.pos.x, y: target.pos.y }, 260, { pop: true });
-            // Family says the name on the drop; word puzzles stay silent per-piece
-            // and say the whole word on completion.
-            if (currentPuzzle.type === 'family') speak(itemNameById(tile.id));
+            // Say each piece as it lands (letter name / emoji / family name). Word
+            // puzzles also say the whole word again on completion (see checkComplete).
+            speak(itemNameById(tile.id));
             const slotNode = stage.querySelector(`[data-slot-index="${target.index}"]`);
             if (slotNode) slotNode.setAttribute('style', 'opacity: 0;');
             updateLevelChip();
@@ -1169,7 +1169,7 @@
 
   // Fires *after* debugToast is fully defined; confirms the app booted.
   setTimeout(() => {
-    const line = 'boot v32 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
+    const line = 'boot v33 ' + pageCount() + ' pages / ' + runTotal + (runEnded ? ' 🏆' : '');
     debugToast(line);
     audioStatus(line);
   }, 100);
